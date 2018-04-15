@@ -1,9 +1,6 @@
 .vscode/
 __pycache__/
-myfaces/
-other_faces/
-samples/
 tmp/
-train_result/
+test/
 *.jpg
 *.JPG

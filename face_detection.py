@@ -194,13 +194,13 @@ def cnnLayer():
     out = tf.add(tf.matmul(dropf, Wout), bout)
     return out
 
-def train(my_faces_path, other_faces_path, pic_size=64):
+def train(my_faces_path, other_faces_path, result_path, pic_size=64, max=None):
 
     imgs = []
     labs = []
 
-    readData(my_faces_path, imgs, labs, pic_size, pic_size)
-    readData(other_faces_path, imgs, labs, pic_size, pic_size)
+    readData(my_faces_path, imgs, labs, pic_size, pic_size, max=max)
+    readData(other_faces_path, imgs, labs, pic_size, pic_size, max=max)
     # 将图片数据与标签转换成数组
     imgs = np.array(imgs)
     labs = np.array([[0,1] if lab == my_faces_path else [1,0] for lab in labs])
@@ -300,10 +300,10 @@ def train(my_faces_path, other_faces_path, pic_size=64):
                     #     saver.save(sess, './train_faces.model', global_step=n*num_batch+i)
                     #     print('accuracy > 0.98, success!')
                     #     sys.exit(0)
-        saver.save(sess, './train_result/train_faces.model', global_step=n*num_batch+i)
+        saver.save(sess, result_path + 'train_faces.model', global_step=n*num_batch+i)
         print('accuracy = %f' % acc)
 
-def recognize_face():
+def recognize_face(result_path, video=0):
 
     def is_my_face(image):
         res = sess.run(predict, feed_dict={x: [image/255.0], keep_prob_5:1.0, keep_prob_75: 1.0})
@@ -357,7 +357,7 @@ def recognize_face():
 
     saver = tf.train.Saver()
     sess = tf.Session()
-    saver.restore(sess, tf.train.latest_checkpoint('./train_result'))
+    saver.restore(sess, tf.train.latest_checkpoint(result_path))
 
     haar = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
 
