@@ -1,6 +1,7 @@
 .vscode/
 __pycache__/
-tmp/
-test/
+pictures/
+*.xml
+*.dat
 *.jpg
 *.JPG
