@@ -7,7 +7,7 @@ import os
 
 
 
-def store_faces(name, img_path, data_path='./data/'):
+def store_face(name, img_path, data_path):
     '''
     @ parameter:
         name: name of the person to be recorded
@@ -88,9 +88,14 @@ def match_face(distances, tolerance):
 
 
 
-def recognize_face(data_path, tolerance=0.6, video=0):
+def recognize_face(data_path, tolerance, video=0):
     '''
-
+    @ parameter:
+        data_path: the directory where .dat files are
+        tolerance: maximum distance to be recognized
+        video: the number of video
+    @ return value:
+        None
     '''
 
     known_faces = load_faces(data_path)
