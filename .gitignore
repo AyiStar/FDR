@@ -2,7 +2,3 @@
 __pycache__/
 pictures/
 data/
-*.xml
-*.dat
-*.jpg
-*.JPG

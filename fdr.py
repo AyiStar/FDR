@@ -3,6 +3,45 @@ import cv2
 import numpy as np
 import csv
 import os
+import time
+from datetime import datetime
+
+
+
+def detect_face(image, pic_path):
+
+
+    # Initialize some variables
+    face_locations = []
+
+    # Resize frame of video to 1/4 size for faster face recognition processing
+    small_image = cv2.resize(image, (0, 0), fx=0.25, fy=0.25)
+
+    # Convert the image from BGR color (which OpenCV uses) to RGB color (which face_recognition uses)
+    rgb_small_image = small_image[:, :, ::-1]
+
+    # Find all the faces in the current frame of video
+    face_locations = face_recognition.face_locations(rgb_small_image)
+
+    if len(face_locations) == 0:
+        return None
+
+    # Display the results
+    top, right, bottom, left = face_locations[0]
+
+    # Scale back up face locations since the frame we detected in was scaled to 1/4 size
+    top *= 4
+    right *= 4
+    bottom *= 4
+    left *= 4
+
+    # Crop the rect and write it
+    crop_image = image[top:bottom, left:right].copy()
+    full_path = pic_path + '/' + datetime.strftime(datetime.now(), '%Y-%m-%d-%H-%M-%S-') + '.jpg'
+    cv2.imwrite(full_path, crop_image)
+
+    return crop_image
+
 
 
 
@@ -17,13 +56,17 @@ def store_face(name, img_path, data_path):
         None
     '''
 
+    full_path = img_path + '/' + name
+    if not os.path.exists(full_path):
+        print('No picture provided!')
+        return
+
     face_encodings = []
-    for file_name in os.listdir(img_path):
+    for file_name in os.listdir(full_path):
         if file_name.endswith('.jpg'):
-            img = face_recognition.load_image_file(img_path + '/' + file_name)
+            img = face_recognition.load_image_file(full_path + '/' + file_name)
             face_encodings.append(face_recognition.face_encodings(img)[0])
     np.savetxt(data_path + '/' + name + '.dat', face_encodings, delimiter=',')
-
 
 
 def load_faces(data_path):
@@ -52,6 +95,15 @@ def get_face_distances(known_faces, unknown_face):
         unknown_faces: 128-d array (face encoding)
     @ return value:
         distances: dict{name:distance}
+    '''
+
+    '''
+        When using a distance threshold of 0.6, the dlib model obtains an accuracy
+    of 99.38% on the standard LFW face recognition benchmark, which is
+    comparable to other state-of-the-art methods for face recognition as of
+    February 2017. This accuracy means that, when presented with a pair of face
+    images, the tool will correctly identify if the pair belongs to the same
+    person or is from different people 99.38% of the time.
     '''
 
     distances = {}
@@ -145,13 +197,12 @@ def recognize_face(data_path, tolerance, video=0):
             left *= 4
 
             # Draw a box around the face
-            cv2.rectangle(frame, (left, top), (right, bottom), (0, 0, 255), 2)
+            cv2.rectangle(frame, (left, top), (right, bottom), (0, 0, 255), 1)
 
             # Draw a label with a name below the face
-            cv2.rectangle(frame, (left, bottom - 35), (right, bottom), (0, 0, 255), cv2.FILLED)
+            #cv2.rectangle(frame, (left, bottom - 35), (right, bottom), (0, 0, 255), cv2.FILLED)
             font = cv2.FONT_HERSHEY_DUPLEX
-            #cv2.putText(frame, name, (left + 6, bottom - 6), font, 1.0, (255, 255, 255), 1)
-            cv2.putText(frame, match[0]+':'+'%.2f'%(match[1]), (left + 6, bottom - 6), font, 1.0, (255, 255, 255), 1)
+            cv2.putText(frame, match[0]+':'+'%.2f'%(match[1]), (left, bottom), font, 1.0, (0, 0, 255), 1)
 
         # Display the resulting image
         cv2.imshow('Video', frame)
