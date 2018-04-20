@@ -23,7 +23,7 @@ class RecordVideo(QtCore.QObject):
 
     image_signal = QtCore.pyqtSignal(np.ndarray)
 
-    def __init__(self, video):
+    def __init__(self, video=0):
         super().__init__()
 
         self.camera = cv2.VideoCapture(video)
@@ -47,7 +47,7 @@ class RecordVideo(QtCore.QObject):
 
 
 
-class FaceRecognitionWidget(QtWidgets.QWidget):
+class CameraWidget(QtWidgets.QWidget):
     '''
     @ Summary:
         On receiving the image signal emitted by RecordVideo,
@@ -60,17 +60,74 @@ class FaceRecognitionWidget(QtWidgets.QWidget):
         using RecognitionResultWidget.
     '''
 
-    result_signal = QtCore.pyqtSignal(str, float)
-
-    def __init__(self, data_path, width=640, height=480):
+    def __init__(self, width=640, height=480):
 
         super().__init__()
         self.image = QtGui.QImage('./img/pig.jpg')
         self.setFixedSize(width, height)
+
+
+
+    def image_slot(self, frame):
+
+        self.image = self.get_QImage(frame)
+        self.update()
+
+    def get_QImage(self, image):
+        height, width, channel = image.shape
+        image = QtGui.QImage(image.data, width,height, 3 * width, QtGui.QImage.Format_RGB888)
+        image = image.rgbSwapped()
+        return image
+
+
+    def paintEvent(self, event):
+        painter = QtGui.QPainter(self)
+        painter.drawImage(0, 0, self.image)
+        self.image = QtGui.QImage()
+
+
+
+class FaceRecognition(QtCore.QObject):
+
+    #result_signal = QtCore.pyqtSignal(object)
+    result_signal = QtCore.pyqtSignal(str, float)
+
+    def __init__(self, data_path):
+
+        super().__init__()
         self.known_faces = fdr.load_faces(data_path)
+        self.face_recognition_thread = FaceRecognitionThread()
+
+    def image_slot(self, image):
+        self.face_recognition_thread.setup(image, self.known_faces)
+        self.face_recognition_thread.matches_signal.connect(self.matches_slot)
+        self.face_recognition_thread.start()
+
+    def matches_slot(self, face_matches):
+        if len(face_matches) > 0:
+            self.result_signal.emit(face_matches[0][0], face_matches[0][1])
 
 
-    def recognize_face(self, image):
+
+class FaceRecognitionThread(QtCore.QThread):
+
+    matches_signal = QtCore.pyqtSignal(object)
+
+    def __init__(self):
+        super().__init__()
+        self.image = None
+        self.known_faces = None
+
+    def run(self):
+        face_matches = self.recognize_face()
+        self.matches_signal.emit(face_matches)
+        time.sleep(1)
+
+    def setup(self, image, known_faces):
+        self.image = image
+        self.known_faces = known_faces
+
+    def recognize_face(self):
 
         # Initialize some variables
         face_locations = []
@@ -78,7 +135,7 @@ class FaceRecognitionWidget(QtWidgets.QWidget):
         face_names = []
 
         # Resize frame of video to 1/4 size for faster face recognition processing
-        small_image = cv2.resize(image, (0, 0), fx=0.25, fy=0.25)
+        small_image = cv2.resize(self.image, (0, 0), fx=0.25, fy=0.25)
 
         # Convert the image from BGR color (which OpenCV uses) to RGB color (which face_recognition uses)
         rgb_small_image = small_image[:, :, ::-1]
@@ -96,6 +153,7 @@ class FaceRecognitionWidget(QtWidgets.QWidget):
 
 
         # Display the results
+        '''
         for (top, right, bottom, left), match in zip(face_locations, face_matches):
 
             # Scale back up face locations since the frame we detected in was scaled to 1/4 size
@@ -105,37 +163,16 @@ class FaceRecognitionWidget(QtWidgets.QWidget):
             left *= 4
 
             # Draw a box around the face and a label with a name below the face
-            '''
+
             if match[0] == 'Unknown':
                 cv2.rectangle(image, (left, top), (right, bottom), (0, 0, 255), 1)
                 cv2.putText(image, match[0]+':'+'%.2f'%(match[1]), (left, bottom+30), cv2.FONT_HERSHEY_DUPLEX, 1.0, (0, 0, 255), 1)
             else:
                 cv2.rectangle(image, (left, top), (right, bottom), (0, 255, 0), 1)
                 cv2.putText(image, match[0]+':'+'%.2f'%(match[1]), (left, bottom+30), cv2.FONT_HERSHEY_DUPLEX, 1.0, (0, 255, 0), 1)
-            '''
+        '''
 
-            self.result_signal.emit(match[0], match[1])
-
-        return image
-
-
-    def image_slot(self, frame):
-
-        image = self.recognize_face(frame)
-        self.image = self.get_QImage(image)
-        self.update()
-
-    def get_QImage(self, image):
-        height, width, channel = image.shape
-        image = QtGui.QImage(image.data, width,height, 3 * width, QtGui.QImage.Format_RGB888)
-        image = image.rgbSwapped()
-        return image
-
-
-    def paintEvent(self, event):
-        painter = QtGui.QPainter(self)
-        painter.drawImage(0, 0, self.image)
-        self.image = QtGui.QImage()
+        return face_matches
 
 
 
@@ -250,24 +287,26 @@ class MainWidget(QtWidgets.QWidget):
 
         super().__init__()
 
-        self.face_recognition_widget = FaceRecognitionWidget(data_path)
+        self.camera_widget = CameraWidget()
         self.recognition_result_widget = RecogitionResultWidget(pic_path)
         self.strange_entry_widget = StrangerEntryWidget(pic_path, data_path)
         self.record_video = RecordVideo(video=video)
+        self.face_recognition = FaceRecognition(data_path)
         self.run_button = QtWidgets.QPushButton('Start')
         self.stop_button = QtWidgets.QPushButton('Stop')
         self.exit_button = QtWidgets.QPushButton('Exit')
 
-        self.record_video.image_signal.connect(self.face_recognition_widget.image_slot)
+        self.record_video.image_signal.connect(self.camera_widget.image_slot)
+        self.record_video.image_signal.connect(self.face_recognition.image_slot)
         self.record_video.image_signal.connect(self.strange_entry_widget.image_slot)
-        self.face_recognition_widget.result_signal.connect(self.recognition_result_widget.result_slot)
+        self.face_recognition.result_signal.connect(self.recognition_result_widget.result_slot)
 
         # Create and set the layout
         total_layout = QtWidgets.QHBoxLayout()
         manage_layout = QtWidgets.QVBoxLayout()
         control_layout = QtWidgets.QVBoxLayout()
 
-        total_layout.addWidget(self.face_recognition_widget)
+        total_layout.addWidget(self.camera_widget)
         total_layout.addLayout(manage_layout)
 
         manage_layout.addWidget(self.recognition_result_widget)
@@ -305,4 +344,3 @@ if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)
     main_GUI = MainWindow('./pictures/', './data/', video=0)
     sys.exit(app.exec_())
-    print('hello')
