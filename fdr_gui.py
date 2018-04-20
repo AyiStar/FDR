@@ -305,3 +305,4 @@ if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)
     main_GUI = MainWindow('./pictures/', './data/', video=0)
     sys.exit(app.exec_())
+    print('hello')
