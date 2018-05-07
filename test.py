@@ -16,8 +16,10 @@ def video_capture(q_image, video):
     while True:
 
         read, image = camera.read()
-        q_image.put(image)
         cv2.imshow('video', image)
+
+        if q_image.empty():
+            q_image.put(image)
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
@@ -61,9 +63,6 @@ def recognize_face(q_image, data_path, tolerance, test=False):
             if not os.path.exists('./test_result/'):
                 os.mkdir('./test_result')
             cv2.imwrite('./test_result/' + datetime.strftime(datetime.now(), '%Y-%m-%d-%H-%M-%S-') + '.jpg', image)
-
-        while not q_image.empty():
-            q_image.get()
 
 
 
