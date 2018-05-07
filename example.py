@@ -1,5 +1,5 @@
 import sys
-from fdr import *
+from utils import *
 from fdr_gui import MainWindow
 from PyQt5 import QtWidgets
 

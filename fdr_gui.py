@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 import face_recognition
 from PyQt5 import QtWidgets, QtGui, QtCore
-import fdr
+import utils
 
 
 
@@ -95,7 +95,7 @@ class FaceRecognition(QtCore.QObject):
     def __init__(self, data_path):
 
         super().__init__()
-        self.known_faces = fdr.load_faces(data_path)
+        self.known_faces = utils.load_faces(data_path)
         self.face_recognition_thread = FaceRecognitionThread()
 
     def image_slot(self, image):
@@ -147,8 +147,8 @@ class FaceRecognitionThread(QtCore.QThread):
 
         for face_encoding in face_encodings:
             # See if the face is a match for the known face(s)
-            distances = fdr.get_face_distances(self.known_faces, face_encoding)
-            match = fdr.match_face(distances, 0.4)
+            distances = utils.get_face_distances(self.known_faces, face_encoding)
+            match = utils.match_face(distances, 0.4)
             face_matches.append(match)
 
 
@@ -259,12 +259,12 @@ class StrangerEntryWidget(QtWidgets.QWidget):
             os.mkdir(full_path)
 
         for n in range(num_pic):
-            face = fdr.detect_face(self.image, full_path)
+            face = utils.detect_face(self.image, full_path)
             if face is not None:
                 self.img_label.setPixmap(QtGui.QPixmap(self.get_QImage(face)).scaled(128, 128, QtCore.Qt.KeepAspectRatio))
             #time.sleep(1)
 
-        fdr.store_face(name, self.pic_path, self.data_path)
+        utils.store_face(name, self.pic_path, self.data_path)
 
 
     def image_slot(self, image):
