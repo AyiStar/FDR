@@ -20,13 +20,13 @@ from PyQt5 import QtWidgets
     The video will show the name of the recognized person, and the corresponding distance.
     Press 'q' to quit.
 '''
-#recognize_face('./data/', tolerance=0.4, video=0)
+recognize_face('./data/', tolerance=0.4, video=0)
 
 
 '''
     Uncomment statements below to launch a GUI.
     As the parameters say, you should have your pictures in ./pictures/ , and .dat files in ./data/
 '''
-app = QtWidgets.QApplication(sys.argv)
-main_GUI = MainWindow('./pictures/', './data/', video=0)
-sys.exit(app.exec_())
+# app = QtWidgets.QApplication(sys.argv)
+# main_GUI = MainWindow('./pictures/', './data/', video=0)
+# sys.exit(app.exec_())

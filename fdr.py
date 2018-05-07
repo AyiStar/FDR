@@ -15,13 +15,13 @@ def detect_face(image, pic_path):
     face_locations = []
 
     # Resize frame of video to 1/4 size for faster face recognition processing
-    small_image = cv2.resize(image, (0, 0), fx=0.25, fy=0.25)
+    #small_image = cv2.resize(image, (0, 0), fx=0.25, fy=0.25)
 
     # Convert the image from BGR color (which OpenCV uses) to RGB color (which face_recognition uses)
-    rgb_small_image = small_image[:, :, ::-1]
+    rgb_image = image[:, :, ::-1]
 
     # Find all the faces in the current frame of video
-    face_locations = face_recognition.face_locations(rgb_small_image)
+    face_locations = face_recognition.face_locations(rgb_image)
 
     if len(face_locations) == 0:
         return None
@@ -30,10 +30,10 @@ def detect_face(image, pic_path):
     top, right, bottom, left = face_locations[0]
 
     # Scale back up face locations since the frame we detected in was scaled to 1/4 size
-    top *= 4
-    right *= 4
-    bottom *= 4
-    left *= 4
+    # top *= 4
+    # right *= 4
+    # bottom *= 4
+    # left *= 4
 
     # Crop the rect and write it
     crop_image = image[top:bottom, left:right].copy()
@@ -140,7 +140,7 @@ def match_face(distances, tolerance):
 
 
 
-def recognize_face(data_path, tolerance, video=0):
+def recognize_face(data_path, tolerance, video=0, test=False):
     '''
     @ parameter:
         data_path: the directory where .dat files are
@@ -166,16 +166,16 @@ def recognize_face(data_path, tolerance, video=0):
         ret, frame = video_capture.read()
 
         # Resize frame of video to 1/4 size for faster face recognition processing
-        small_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
+        #small_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
 
         # Convert the image from BGR color (which OpenCV uses) to RGB color (which face_recognition uses)
-        rgb_small_frame = small_frame[:, :, ::-1]
+        rgb_frame = frame[:, :, ::-1]
 
         # Only process every other frame of video to save time
         if process_this_frame:
             # Find all the faces and face encodings in the current frame of video
-            face_locations = face_recognition.face_locations(rgb_small_frame)
-            face_encodings = face_recognition.face_encodings(rgb_small_frame, face_locations)
+            face_locations = face_recognition.face_locations(rgb_frame)
+            face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
             face_matches = []
 
             for face_encoding in face_encodings:
@@ -191,10 +191,10 @@ def recognize_face(data_path, tolerance, video=0):
         for (top, right, bottom, left), match in zip(face_locations, face_matches):
 
             # Scale back up face locations since the frame we detected in was scaled to 1/4 size
-            top *= 4
-            right *= 4
-            bottom *= 4
-            left *= 4
+            # top *= 4
+            # right *= 4
+            # bottom *= 4
+            # left *= 4
 
             # Draw a box around the face
             cv2.rectangle(frame, (left, top), (right, bottom), (0, 0, 255), 1)

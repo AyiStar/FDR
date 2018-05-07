@@ -27,8 +27,8 @@ class RecordVideo(QtCore.QObject):
         super().__init__()
 
         self.camera = cv2.VideoCapture(video)
-        self.camera.set(3, 640)
-        self.camera.set(4, 480)
+        #self.camera.set(3, 640)
+        #self.camera.set(4, 480)
         self.timer = QtCore.QBasicTimer()
 
     def start_recording(self):
@@ -119,7 +119,7 @@ class FaceRecognitionThread(QtCore.QThread):
         self.known_faces = None
 
     def run(self):
-        face_matches = self.recognize_face()
+        face_matches = self.recognize_face(self.image)
         self.matches_signal.emit(face_matches)
         time.sleep(1)
 
@@ -127,7 +127,7 @@ class FaceRecognitionThread(QtCore.QThread):
         self.image = image
         self.known_faces = known_faces
 
-    def recognize_face(self):
+    def recognize_face(self, image):
 
         # Initialize some variables
         face_locations = []
@@ -135,14 +135,14 @@ class FaceRecognitionThread(QtCore.QThread):
         face_names = []
 
         # Resize frame of video to 1/4 size for faster face recognition processing
-        small_image = cv2.resize(self.image, (0, 0), fx=0.25, fy=0.25)
+        #small_image = cv2.resize(self.image, (0, 0), fx=0.25, fy=0.25)
 
         # Convert the image from BGR color (which OpenCV uses) to RGB color (which face_recognition uses)
-        rgb_small_image = small_image[:, :, ::-1]
+        rgb_image = image[:, :, ::-1]
 
         # Find all the faces and face encodings in the current frame of video
-        face_locations = face_recognition.face_locations(rgb_small_image)
-        face_encodings = face_recognition.face_encodings(rgb_small_image, face_locations)
+        face_locations = face_recognition.face_locations(rgb_image)
+        face_encodings = face_recognition.face_encodings(rgb_image, face_locations)
         face_matches = []
 
         for face_encoding in face_encodings:
@@ -153,7 +153,7 @@ class FaceRecognitionThread(QtCore.QThread):
 
 
         # Display the results
-        '''
+
         for (top, right, bottom, left), match in zip(face_locations, face_matches):
 
             # Scale back up face locations since the frame we detected in was scaled to 1/4 size
@@ -163,14 +163,14 @@ class FaceRecognitionThread(QtCore.QThread):
             left *= 4
 
             # Draw a box around the face and a label with a name below the face
-
+            '''
             if match[0] == 'Unknown':
                 cv2.rectangle(image, (left, top), (right, bottom), (0, 0, 255), 1)
                 cv2.putText(image, match[0]+':'+'%.2f'%(match[1]), (left, bottom+30), cv2.FONT_HERSHEY_DUPLEX, 1.0, (0, 0, 255), 1)
             else:
                 cv2.rectangle(image, (left, top), (right, bottom), (0, 255, 0), 1)
                 cv2.putText(image, match[0]+':'+'%.2f'%(match[1]), (left, bottom+30), cv2.FONT_HERSHEY_DUPLEX, 1.0, (0, 255, 0), 1)
-        '''
+            '''
 
         return face_matches
 
