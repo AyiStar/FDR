@@ -14,9 +14,6 @@ def detect_face(image, pic_path):
     # Initialize some variables
     face_locations = []
 
-    # Resize frame of video to 1/4 size for faster face recognition processing
-    #small_image = cv2.resize(image, (0, 0), fx=0.25, fy=0.25)
-
     # Convert the image from BGR color (which OpenCV uses) to RGB color (which face_recognition uses)
     rgb_image = image[:, :, ::-1]
 
@@ -29,20 +26,12 @@ def detect_face(image, pic_path):
     # Display the results
     top, right, bottom, left = face_locations[0]
 
-    # Scale back up face locations since the frame we detected in was scaled to 1/4 size
-    # top *= 4
-    # right *= 4
-    # bottom *= 4
-    # left *= 4
-
     # Crop the rect and write it
     crop_image = image[top:bottom, left:right].copy()
     full_path = pic_path + '/' + datetime.strftime(datetime.now(), '%Y-%m-%d-%H-%M-%S-') + '.jpg'
     cv2.imwrite(full_path, crop_image)
 
     return crop_image
-
-
 
 
 
@@ -67,6 +56,7 @@ def store_face(name, img_path, data_path):
             img = face_recognition.load_image_file(full_path + '/' + file_name)
             face_encodings.append(face_recognition.face_encodings(img)[0])
     np.savetxt(data_path + '/' + name + '.dat', face_encodings, delimiter=',')
+
 
 
 def load_faces(data_path):
@@ -140,7 +130,7 @@ def match_face(distances, tolerance):
 
 
 
-def recognize_face(data_path, tolerance, video=0, test=False):
+def test(data_path, tolerance=0.4, video=0):
     '''
     @ parameter:
         data_path: the directory where .dat files are
@@ -165,9 +155,6 @@ def recognize_face(data_path, tolerance, video=0, test=False):
         # Grab a single frame of video
         ret, frame = video_capture.read()
 
-        # Resize frame of video to 1/4 size for faster face recognition processing
-        #small_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
-
         # Convert the image from BGR color (which OpenCV uses) to RGB color (which face_recognition uses)
         rgb_frame = frame[:, :, ::-1]
 
@@ -190,12 +177,6 @@ def recognize_face(data_path, tolerance, video=0, test=False):
         # Display the results
         for (top, right, bottom, left), match in zip(face_locations, face_matches):
 
-            # Scale back up face locations since the frame we detected in was scaled to 1/4 size
-            # top *= 4
-            # right *= 4
-            # bottom *= 4
-            # left *= 4
-
             # Draw a box around the face
             cv2.rectangle(frame, (left, top), (right, bottom), (0, 0, 255), 1)
 
@@ -214,3 +195,48 @@ def recognize_face(data_path, tolerance, video=0, test=False):
     #Release handle to the webcam
     video_capture.release()
     cv2.destroyAllWindows()
+
+
+
+def recognize_face_process(q_image, q_result, data_path, tolerance, test=False):
+
+    known_faces = load_faces(data_path)
+    face_locations = []
+    face_encodings = []
+    face_names = []
+
+    while True:
+        image = q_image.get(True)
+        #print('get a image')
+        rgb_image = image[:, :, ::-1]
+        face_locations = face_recognition.face_locations(rgb_image, number_of_times_to_upsample=1)
+        face_encodings = face_recognition.face_encodings(rgb_image, face_locations, num_jitters=1)
+        face_matches = []
+
+        for face_encoding in face_encodings:
+            # See if the face is a match for the known face(s)
+            distances = get_face_distances(known_faces, face_encoding)
+            match = match_face(distances, tolerance)
+            face_matches.append(match)
+
+
+        q_result.put(face_matches)
+
+        if test:
+            if len(face_matches) == 0:
+                print('No face')
+            else:
+                print('Detected face')
+
+                for (top, right, bottom, left), match in zip(face_locations, face_matches):
+                    # Draw a box around the face
+                    cv2.rectangle(image, (left, top), (right, bottom), (0, 0, 255), 1)
+
+                    # Draw a label with a name below the face
+                    #cv2.rectangle(frame, (left, bottom - 35), (right, bottom), (0, 0, 255), cv2.FILLED)
+                    font = cv2.FONT_HERSHEY_DUPLEX
+                    cv2.putText(image, match[0]+':'+'%.2f'%(match[1]), (left, bottom), font, 1.0, (0, 0, 255), 1)
+
+                if not os.path.exists('./test_result/'):
+                    os.mkdir('./test_result')
+                cv2.imwrite('./test_result/' + datetime.strftime(datetime.now(), '%Y-%m-%d-%H-%M-%S-') + '.jpg', image)

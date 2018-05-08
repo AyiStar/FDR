@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import multiprocessing as mp
 import cv2
 import numpy as np
 import face_recognition
@@ -22,11 +23,14 @@ class RecordVideo(QtCore.QObject):
     '''
 
     image_signal = QtCore.pyqtSignal(np.ndarray)
+    result_signal = QtCore.pyqtSignal()
 
-    def __init__(self, video=0):
+    def __init__(self, image_queue, result_queue, video=0):
         super().__init__()
 
         self.camera = cv2.VideoCapture(video)
+        self.image_queue = image_queue
+        self.result_queue = result_queue
         #self.camera.set(3, 640)
         #self.camera.set(4, 480)
         self.timer = QtCore.QBasicTimer()
@@ -44,6 +48,11 @@ class RecordVideo(QtCore.QObject):
         read, image = self.camera.read()
         if read:
             self.image_signal.emit(image)
+            if self.image_queue.empty():
+                self.image_queue.put(image)
+            if not self.result_queue.empty():
+                self.result_signal.emit()
+
 
 
 
@@ -89,90 +98,29 @@ class CameraWidget(QtWidgets.QWidget):
 
 class FaceRecognition(QtCore.QObject):
 
-    #result_signal = QtCore.pyqtSignal(object)
-    result_signal = QtCore.pyqtSignal(str, float)
-
-    def __init__(self, data_path):
+    def __init__(self, image_queue, result_queue, data_path, tolerance=0.4):
 
         super().__init__()
-        self.known_faces = utils.load_faces(data_path)
-        self.face_recognition_thread = FaceRecognitionThread()
+        self.data_path = data_path
+        self.tolerance = tolerance
+        self.known_faces = utils.load_faces(self.data_path)
+        self.image_queue = image_queue
+        self.result_queue = result_queue
+        self.process = None
 
-    def image_slot(self, image):
-        self.face_recognition_thread.setup(image, self.known_faces)
-        self.face_recognition_thread.matches_signal.connect(self.matches_slot)
-        self.face_recognition_thread.start()
-
-    def matches_slot(self, face_matches):
-        if len(face_matches) > 0:
-            self.result_signal.emit(face_matches[0][0], face_matches[0][1])
-
-
-
-class FaceRecognitionThread(QtCore.QThread):
-
-    matches_signal = QtCore.pyqtSignal(object)
-
-    def __init__(self):
-        super().__init__()
-        self.image = None
-        self.known_faces = None
-
-    def run(self):
-        face_matches = self.recognize_face(self.image)
-        self.matches_signal.emit(face_matches)
-        time.sleep(1)
-
-    def setup(self, image, known_faces):
-        self.image = image
-        self.known_faces = known_faces
-
-    def recognize_face(self, image):
-
-        # Initialize some variables
-        face_locations = []
-        face_encodings = []
-        face_names = []
-
-        # Resize frame of video to 1/4 size for faster face recognition processing
-        #small_image = cv2.resize(self.image, (0, 0), fx=0.25, fy=0.25)
-
-        # Convert the image from BGR color (which OpenCV uses) to RGB color (which face_recognition uses)
-        rgb_image = image[:, :, ::-1]
-
-        # Find all the faces and face encodings in the current frame of video
-        face_locations = face_recognition.face_locations(rgb_image)
-        face_encodings = face_recognition.face_encodings(rgb_image, face_locations)
-        face_matches = []
-
-        for face_encoding in face_encodings:
-            # See if the face is a match for the known face(s)
-            distances = utils.get_face_distances(self.known_faces, face_encoding)
-            match = utils.match_face(distances, 0.4)
-            face_matches.append(match)
+    def start_recognizing(self):
+        self.process = mp.Process(target=utils.recognize_face_process,
+                                  args=(self.image_queue, self.result_queue, self.data_path, self.tolerance, ))
+        self.process.start()
 
 
-        # Display the results
-
-        for (top, right, bottom, left), match in zip(face_locations, face_matches):
-
-            # Scale back up face locations since the frame we detected in was scaled to 1/4 size
-            top *= 4
-            right *= 4
-            bottom *= 4
-            left *= 4
-
-            # Draw a box around the face and a label with a name below the face
-            '''
-            if match[0] == 'Unknown':
-                cv2.rectangle(image, (left, top), (right, bottom), (0, 0, 255), 1)
-                cv2.putText(image, match[0]+':'+'%.2f'%(match[1]), (left, bottom+30), cv2.FONT_HERSHEY_DUPLEX, 1.0, (0, 0, 255), 1)
-            else:
-                cv2.rectangle(image, (left, top), (right, bottom), (0, 255, 0), 1)
-                cv2.putText(image, match[0]+':'+'%.2f'%(match[1]), (left, bottom+30), cv2.FONT_HERSHEY_DUPLEX, 1.0, (0, 255, 0), 1)
-            '''
-
-        return face_matches
+    def stop_recognizing(self):
+        if self.process is not None:
+            self.process.terminate()
+        while not self.image_queue.empty():
+            self.image_queue.get()
+        while not self.result_queue.empty():
+            self.result_queue.get()
 
 
 
@@ -183,40 +131,30 @@ class RecogitionResultWidget(QtWidgets.QWidget):
         this widget display the result.
     '''
 
-    def __init__(self, pic_path):
+    def __init__(self, result_queue):
 
         super().__init__()
 
-        self.pic_path = pic_path
-
-        self.img_label  = QtWidgets.QLabel()
-        self.img_label.setPixmap(QtGui.QPixmap('./img/question.jpg').scaled(128, 128, QtCore.Qt.KeepAspectRatio))
-        self.name_label = QtWidgets.QLabel('Name : --')
-        self.dist_label = QtWidgets.QLabel('Distance: --')
+        self.result_queue = result_queue
+        self.result_label = QtWidgets.QLabel('Name : --\nDistance : --\n')
 
         layout = QtWidgets.QVBoxLayout()
-
-        layout.addWidget(self.img_label)
-        layout.addWidget(self.name_label)
-        layout.addWidget(self.dist_label)
-
+        layout.addWidget(self.result_label)
         self.setLayout(layout)
 
-    def result_slot(self, name : str, distance : float):
+    def result_slot(self):
 
-        pic_file_name = ''
-        if name == 'Unknown':
-            pic_file_name = './img/question.jpg'
+        result = self.result_queue.get(True)
+
+        if len(result) > 0:
+            text = []
+            for name, dist in result:
+                text.append('Name : ' + name + '\n')
+                text.append('Distance : %.3f' % dist + '\n')
+                text.append('\n')
+            self.result_label.setText(''.join(text))
         else:
-            pic_full_path = self.pic_path + '/' + name + '/'
-            pic_file_name = pic_full_path + os.listdir(pic_full_path)[0]
-
-        name_text = 'Name : ' + name
-        dist_text = 'Distance : %.3f' % distance
-
-        self.img_label.setPixmap(QtGui.QPixmap(pic_file_name).scaled(128, 128, QtCore.Qt.KeepAspectRatio))
-        self.name_label.setText(name_text)
-        self.dist_label.setText(dist_text)
+            self.result_label.setText('No face detected')
 
 
 
@@ -237,13 +175,11 @@ class StrangerEntryWidget(QtWidgets.QWidget):
         self.img_label  = QtWidgets.QLabel()
         self.img_label.setPixmap(QtGui.QPixmap('./img/dog.jpg').scaled(128, 128, QtCore.Qt.KeepAspectRatio))
         self.name_input = QtWidgets.QLineEdit('Your name')
-        self.number_input = QtWidgets.QLineEdit('Positive Int')
         self.enter_button = QtWidgets.QPushButton('Enter New Data')
 
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(self.img_label)
         layout.addWidget(self.name_input)
-        layout.addWidget(self.number_input)
         layout.addWidget(self.enter_button)
 
         self.enter_button.clicked.connect(self.enter_stranger)
@@ -252,17 +188,14 @@ class StrangerEntryWidget(QtWidgets.QWidget):
 
     def enter_stranger(self):
         name = self.name_input.text()
-        num_pic = int(self.number_input.text())
 
         full_path = self.pic_path + '/' + name + '/'
         if not os.path.exists(full_path):
             os.mkdir(full_path)
 
-        for n in range(num_pic):
-            face = utils.detect_face(self.image, full_path)
-            if face is not None:
-                self.img_label.setPixmap(QtGui.QPixmap(self.get_QImage(face)).scaled(128, 128, QtCore.Qt.KeepAspectRatio))
-            #time.sleep(1)
+        face = utils.detect_face(self.image, full_path)
+        if face is not None:
+            self.img_label.setPixmap(QtGui.QPixmap(self.get_QImage(face)).scaled(128, 128, QtCore.Qt.KeepAspectRatio))
 
         utils.store_face(name, self.pic_path, self.data_path)
 
@@ -287,19 +220,22 @@ class MainWidget(QtWidgets.QWidget):
 
         super().__init__()
 
+        self.image_queue = mp.Queue()
+        self.result_queue = mp.Queue()
+
+        self.record_video = RecordVideo(self.image_queue, self.result_queue, video=video)
         self.camera_widget = CameraWidget()
-        self.recognition_result_widget = RecogitionResultWidget(pic_path)
+        self.face_recognition = FaceRecognition(self.image_queue, self.result_queue, data_path)
+        self.recognition_result_widget = RecogitionResultWidget(self.result_queue)
         self.strange_entry_widget = StrangerEntryWidget(pic_path, data_path)
-        self.record_video = RecordVideo(video=video)
-        self.face_recognition = FaceRecognition(data_path)
+
         self.run_button = QtWidgets.QPushButton('Start')
         self.stop_button = QtWidgets.QPushButton('Stop')
         self.exit_button = QtWidgets.QPushButton('Exit')
 
         self.record_video.image_signal.connect(self.camera_widget.image_slot)
-        self.record_video.image_signal.connect(self.face_recognition.image_slot)
         self.record_video.image_signal.connect(self.strange_entry_widget.image_slot)
-        self.face_recognition.result_signal.connect(self.recognition_result_widget.result_slot)
+        self.record_video.result_signal.connect(self.recognition_result_widget.result_slot)
 
         # Create and set the layout
         total_layout = QtWidgets.QHBoxLayout()
@@ -318,7 +254,10 @@ class MainWidget(QtWidgets.QWidget):
         control_layout.addWidget(self.exit_button)
 
         self.run_button.clicked.connect(self.record_video.start_recording)
+        self.run_button.clicked.connect(self.face_recognition.start_recognizing)
         self.stop_button.clicked.connect(self.record_video.stop_recording)
+        self.stop_button.clicked.connect(self.face_recognition.stop_recognizing)
+        self.exit_button.clicked.connect(self.face_recognition.stop_recognizing)
         self.exit_button.clicked.connect(QtCore.QCoreApplication.quit)
         self.setLayout(total_layout)
 
