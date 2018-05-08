@@ -37,9 +37,9 @@ def recognize_face(q_image, data_path, tolerance, test=False):
 
     while True:
         image = q_image.get(True)
-        print('get a image')
+        #print('get a image')
         rgb_image = image[:, :, ::-1]
-        face_locations = face_recognition.face_locations(rgb_image, number_of_times_to_upsample=1)
+        face_locations = face_recognition.face_locations(rgb_image, number_of_times_to_upsample=0, model="cnn")
         face_encodings = face_recognition.face_encodings(rgb_image, face_locations, num_jitters=1)
         face_matches = []
 
@@ -58,6 +58,9 @@ def recognize_face(q_image, data_path, tolerance, test=False):
             #cv2.rectangle(frame, (left, bottom - 35), (right, bottom), (0, 0, 255), cv2.FILLED)
             font = cv2.FONT_HERSHEY_DUPLEX
             cv2.putText(image, match[0]+':'+'%.2f'%(match[1]), (left, bottom), font, 1.0, (0, 0, 255), 1)
+
+        if len(face_matches) > 0:
+            print('detect a person')
 
         if test == True:
             if not os.path.exists('./test_result/'):
@@ -80,4 +83,4 @@ def main(video=0):
 
 
 if __name__ == '__main__':
-    main()
+    main(video=0)
