@@ -75,9 +75,10 @@ def store_face(name, img_path, db_conn):
             cursor.execute('INSERT INTO Vectors (vector, person_ID) VALUES (%s,%s)', (vector, person_id))
 
     db_conn.commit()
+    db_conn.close()
 
 
-def load_faces(db_conn):
+def load_faces(db, user, passwd):
     '''
     @ parameter:
         db_conn: database connect object
@@ -85,6 +86,7 @@ def load_faces(db_conn):
         known_faces: dict{uuid:[face_encoding]}
     '''
 
+    db_conn = MySQLdb.connect(db=db, user=user, passwd=passwd)
     known_faces = {}
     cursor = db_conn.cursor()
     cursor.execute('SELECT DISTINCT Persons.person_ID FROM Persons, Vectors WHERE Persons.person_ID = Vectors.person_ID ')
@@ -231,10 +233,10 @@ def get_geolocation():
 
 
 
-def recognize_face_process(q_image, q_result, db_conn, tolerance, test=False):
+def recognize_face_process(q_image, q_result, db, user, passwd, tolerance, test=False):
 
-
-    known_faces = load_faces(db_conn)
+    db_conn = MySQLdb.connect(db=db, user=user, passwd=passwd)
+    known_faces = load_faces(db, user, passwd)
     face_locations = []
     face_encodings = []
     face_names = []
@@ -278,9 +280,10 @@ def recognize_face_process(q_image, q_result, db_conn, tolerance, test=False):
 
 
 
-def analyze_result_process(q_result, q_info, db_conn):
+def analyze_result_process(q_result, q_info, db, user, passwd):
 
     MEET_INTERVAL = 10
+    db_conn = MySQLdb.connect(db=db, user=user, passwd=passwd)
     db_conn.set_character_set('utf8')
 
     while True:

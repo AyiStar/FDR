@@ -102,19 +102,20 @@ class CameraWidget(QtWidgets.QWidget):
 
 class FaceRecognition(QtCore.QObject):
 
-    def __init__(self, image_queue, result_queue, db_conn, tolerance=0.4):
+    def __init__(self, image_queue, result_queue, db, user, passwd, tolerance=0.4):
 
         super().__init__()
-        self.db_conn = db_conn
+        self.db = db
+        self.user = user
+        self.passwd = passwd
         self.tolerance = tolerance
-        self.known_faces = utils.load_faces(self.db_conn)
         self.image_queue = image_queue
         self.result_queue = result_queue
         self.process = None
 
     def start_recognizing(self):
         self.process = mp.Process(target=utils.recognize_face_process,
-                                  args=(self.image_queue, self.result_queue, self.db_conn, self.tolerance, ))
+                                  args=(self.image_queue, self.result_queue, self.db, self.user, self.passwd, self.tolerance, ))
         self.process.start()
 
 
@@ -129,17 +130,19 @@ class FaceRecognition(QtCore.QObject):
 
 
 class ResultAnalysis(QtCore.QObject):
-    def __init__(self, result_queue, info_queue, db_conn):
+    def __init__(self, result_queue, info_queue, db, user, passwd):
 
         super().__init__()
-        self.db_conn = db_conn
+        self.db = db
+        self.user = user
+        self.passwd = passwd
         self.result_queue = result_queue
         self.info_queue = info_queue
         self.process = None
 
     def start_analyzing(self):
         self.process = mp.Process(target=utils.analyze_result_process,
-                                  args=(self.result_queue, self.info_queue, self.db_conn, ))
+                                  args=(self.result_queue, self.info_queue, self.db, self.user, self.passwd))
         self.process.start()
 
 
@@ -196,12 +199,12 @@ class StrangerEntryWidget(QtWidgets.QWidget):
         This widget record new faces in the camera,
         and also compute the feature vectors, and store them.
     '''
-    def __init__(self, pic_path, db_conn):
+    def __init__(self, pic_path, db, user, passwd):
 
         super().__init__()
 
         self.pic_path = pic_path
-        self.db_conn = db_conn
+        self.db_conn = MySQLdb.connect(db=db, user=user, passwd=passwd)
         self.image = None
 
         self.img_label  = QtWidgets.QLabel()
@@ -261,7 +264,7 @@ class MainWidget(QtWidgets.QWidget):
     @ Summary:
         The main widget, combining the widgets above.
     '''
-    def __init__(self, pic_path, db_conn, video=0):
+    def __init__(self, pic_path, db, user, passwd, video=0):
 
         super().__init__()
 
@@ -271,10 +274,10 @@ class MainWidget(QtWidgets.QWidget):
 
         self.record_video = RecordVideo(self.image_queue, self.info_queue, video=video)
         self.camera_widget = CameraWidget()
-        self.face_recognition = FaceRecognition(self.image_queue, self.result_queue, db_conn)
-        self.result_analysis = ResultAnalysis(self.result_queue, self.info_queue, db_conn)
+        self.face_recognition = FaceRecognition(self.image_queue, self.result_queue, db, user, passwd)
+        self.result_analysis = ResultAnalysis(self.result_queue, self.info_queue, db, user, passwd)
         self.result_display_widget = ResultDisplayWidget(self.info_queue)
-        self.strange_entry_widget = StrangerEntryWidget(pic_path, db_conn)
+        self.strange_entry_widget = StrangerEntryWidget(pic_path, db, user, passwd)
 
         self.run_button = QtWidgets.QPushButton('Start')
         self.stop_button = QtWidgets.QPushButton('Stop')
@@ -318,10 +321,10 @@ class MainWindow(QtWidgets.QMainWindow):
     @ Summary:
         The main window containging the main widget.
     '''
-    def __init__(self, pic_path, db_conn, video=0):
+    def __init__(self, pic_path, db, user, passwd, video=0):
 
         super().__init__()
-        self.main_widget = MainWidget(pic_path, db_conn, video=video)
+        self.main_widget = MainWidget(pic_path, db, user, passwd, video=video)
         self.setCentralWidget(self.main_widget)
         self.setWindowTitle('Face Detection & Recognition System')
         self.setWindowIcon(QtGui.QIcon('./img/icon.jpg'))
@@ -330,8 +333,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
 if __name__ == '__main__':
-    db_conn = MySQLdb.connect(db='FDR')
     app = QtWidgets.QApplication(sys.argv)
-    main_GUI = MainWindow('./pictures/', db_conn, video=0)
+    main_GUI = MainWindow('./pictures/', 'FDR', 'ayistar', '', video=0)
     sys.exit(app.exec_())
-    db_conn.close()
