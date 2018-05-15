@@ -1,9 +1,15 @@
+# coding: utf-8
+
 import face_recognition
 import cv2
 import numpy as np
 import csv
 import os
 import time
+import urllib.request
+import json
+import pickle
+import MySQLdb
 from datetime import datetime
 
 
@@ -35,12 +41,12 @@ def detect_face(image, pic_path):
 
 
 
-def store_face(name, img_path, data_path):
+def store_face(name, img_path, db_conn):
     '''
     @ parameter:
         name: name of the person to be recorded
         img_path: path of pictures of the person
-        data_path: path of data file to store the encoding
+        db_conn: database connection
     @ return value:
         None
     '''
@@ -50,30 +56,45 @@ def store_face(name, img_path, data_path):
         print('No picture provided!')
         return
 
-    face_encodings = []
+    cursor = db_conn.cursor()
+    cursor.execute('SELECT name, person_ID FROM Persons WHERE name=%s', (name,))
+    person_id = ''
+    result = cursor.fetchall()
+    if len(result) > 0:
+        person_id = result[0][1]
+    else:
+        cursor.execute('SELECT UUID()')
+        person_id = cursor.fetchone()[0]
+        current_time = datetime.strftime(datetime.now(), '%Y-%m-%d-%H-%M-%S')
+        cursor.execute('INSERT INTO Persons (person_ID, name, last_meet_time) VALUES (%s, %s, %s)', (person_id, name, current_time))
+
     for file_name in os.listdir(full_path):
         if file_name.endswith('.jpg'):
             img = face_recognition.load_image_file(full_path + '/' + file_name)
-            face_encodings.append(face_recognition.face_encodings(img)[0])
-    np.savetxt(data_path + '/' + name + '.dat', face_encodings, delimiter=',')
+            vector = pickle.dumps(face_recognition.face_encodings(img)[0])
+            cursor.execute('INSERT INTO Vectors (vector, person_ID) VALUES (%s,%s)', (vector, person_id))
+
+    db_conn.commit()
 
 
-
-def load_faces(data_path):
+def load_faces(db_conn):
     '''
     @ parameter:
-        data_path: the path of data file to be read
+        db_conn: database connect object
     @ return value:
-        known_faces: dict{name:[face_encoding]}
+        known_faces: dict{uuid:[face_encoding]}
     '''
 
     known_faces = {}
-    for file_name in os.listdir(data_path):
-        if file_name.endswith('.dat'):
-            name = file_name.rstrip('.dat')
-            face_encodings = np.loadtxt(data_path + '/' + file_name, delimiter=',')
-            known_faces[name] = face_encodings
-
+    cursor = db_conn.cursor()
+    cursor.execute('SELECT DISTINCT Persons.person_ID FROM Persons, Vectors WHERE Persons.person_ID = Vectors.person_ID ')
+    pids = cursor.fetchall()
+    for pid, in pids:
+        known_faces[pid] = []
+        cursor.execute('SELECT Vectors.vector FROM Persons, Vectors WHERE Persons.person_ID = Vectors.person_ID AND Persons.person_ID = %s', (pid,))
+        vectors = cursor.fetchall()
+        for vector, in vectors:
+            known_faces[pid].append(pickle.loads(vector))
     return known_faces
 
 
@@ -125,22 +146,24 @@ def match_face(distances, tolerance):
             match_dist = distances[name]
             match_name = name
     if match_dist > tolerance:
-        match_name = 'Unknown'
+        match_name = ''
     return (match_name, match_dist)
 
 
 
-def test(data_path, tolerance=0.4, video=0):
+def test(tolerance=0.4, video=0):
     '''
     @ parameter:
-        data_path: the directory where .dat files are
+        #data_path: the directory where .dat files are
         tolerance: maximum distance to be recognized
         video: the number of video
     @ return value:
         None
     '''
 
-    known_faces = load_faces(data_path)
+    db_conn = MySQLdb.connect(db='FDR')
+    known_faces = load_faces(db_conn)
+    print(len(known_faces))
 
     video_capture = cv2.VideoCapture(video)
 
@@ -198,9 +221,20 @@ def test(data_path, tolerance=0.4, video=0):
 
 
 
-def recognize_face_process(q_image, q_result, data_path, tolerance, test=False):
+def get_geolocation():
+    url = 'http://api.map.baidu.com/location/ip?ak=uUNkiGCf08sLOwqXyOhYAUKLdyqhIK6H&sn=e62fe445afb83f1fb6ffe3e43297d6bb'
+    req = urllib.request.urlopen(url)
+    res = req.read().decode()
+    tmp = json.loads(res)
+    return tmp['content']['address']
 
-    known_faces = load_faces(data_path)
+
+
+
+def recognize_face_process(q_image, q_result, db_conn, tolerance, test=False):
+
+
+    known_faces = load_faces(db_conn)
     face_locations = []
     face_encodings = []
     face_names = []
@@ -222,6 +256,7 @@ def recognize_face_process(q_image, q_result, data_path, tolerance, test=False):
 
         q_result.put(face_matches)
 
+
         if test:
             if len(face_matches) == 0:
                 print('No face')
@@ -240,3 +275,54 @@ def recognize_face_process(q_image, q_result, data_path, tolerance, test=False):
                 if not os.path.exists('./test_result/'):
                     os.mkdir('./test_result')
                 cv2.imwrite('./test_result/' + datetime.strftime(datetime.now(), '%Y-%m-%d-%H-%M-%S-') + '.jpg', image)
+
+
+
+def analyze_result_process(q_result, q_info, db_conn):
+
+    MEET_INTERVAL = 10
+    db_conn.set_character_set('utf8')
+
+    while True:
+        result = q_result.get(True)
+        result_info = []
+        for match in result:
+            info = {}
+            person_id = match[0]
+            if len(person_id) > 0: # known
+                cursor = db_conn.cursor()
+                cursor.execute('SET NAMES utf8;')
+                cursor.execute('SET CHARACTER SET utf8;')
+                cursor.execute('SET character_set_connection=utf8;')
+                cursor.execute('SELECT name, last_meet_time FROM Persons WHERE person_ID=%s', (person_id,))
+                result = cursor.fetchone()
+                name = result[0]
+                last_meet_time = result[1]
+                # get info
+                info['name'] = name
+                info['last_meet_time'] = last_meet_time.strftime('%Y-%m-%d-%H-%M-%S')
+                cursor.execute('SELECT meet_time, meet_place FROM Meets WHERE person_ID=%s', (person_id,))
+                result = cursor.fetchall()[-3:]
+                info['meet_times'] = []
+                info['meet_places'] = []
+                for t, p in result:
+                    info['meet_times'].append(t.strftime('%Y-%m-%d-%H-%M-%S'))
+                    info['meet_places'].append(p)
+                result_info.append(info)
+                # update database
+                current_time = datetime.now()
+                if (current_time - last_meet_time).seconds < MEET_INTERVAL:
+                    continue
+                current_place = get_geolocation()
+                cursor.execute('UPDATE Persons SET last_meet_time=%s WHERE person_ID=%s',
+                                (current_time.strftime('%Y-%m-%d-%H-%M-%S'), person_id,))
+                cursor.execute('INSERT INTO Meets (meet_time, meet_place, person_ID) VALUES (%s,%s,%s)',
+                                (current_time.strftime('%Y-%m-%d-%H-%M-%S'), current_place, person_id,))
+                db_conn.commit()
+            else: # Unknown
+                info['name'] = 'Unknown'
+                result_info.append(info)
+                # TODO
+
+        #print(result_info)
+        q_info.put(result_info)

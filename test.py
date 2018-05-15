@@ -1,3 +1,5 @@
+# coding: utf-8
+
 from multiprocessing import Process, Queue
 from utils import *
 import cv2
@@ -6,6 +8,7 @@ from datetime import datetime
 import numpy as np
 import os
 import face_recognition
+import MySQLdb
 
 
 
@@ -70,15 +73,21 @@ def recognize_face(q_image, data_path, tolerance, test=False):
 
 
 def main(video=0):
-    q = Queue()
-    p_video_capture = Process(target=video_capture, args=(q, video))
-    p_face_recognition = Process(target=recognize_face, args=(q, './data/', 0.4, True))
+    # q = Queue()
+    # p_video_capture = Process(target=video_capture, args=(q, video))
+    # p_face_recognition = Process(target=recognize_face, args=(q, './data/', 0.4, True))
 
-    p_face_recognition.start()
-    p_video_capture.start()
+    # p_face_recognition.start()
+    # p_video_capture.start()
 
-    p_video_capture.join()
-    p_face_recognition.terminate()
+    # p_video_capture.join()
+    # p_face_recognition.terminate()
+    db_conn = MySQLdb.connect(db='FDR', user='ayistar', passwd='')
+    #load_faces(db_conn)
+    store_face('Dog', './pictures/', db_conn)
+
+    #test()
+
 
 
 
