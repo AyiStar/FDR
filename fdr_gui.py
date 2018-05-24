@@ -5,14 +5,15 @@ import sys
 import time
 import pickle
 import multiprocessing as mp
+
 import cv2
 import numpy as np
 import face_recognition
 from PyQt5 import QtWidgets, QtGui, QtCore
-import utils
 import MySQLdb
 
-
+import faceutils
+import weiboclient
 
 
 class RecordVideo(QtCore.QObject):
@@ -114,7 +115,7 @@ class FaceRecognition(QtCore.QObject):
         self.process = None
 
     def start_recognizing(self):
-        self.process = mp.Process(target=utils.recognize_face_process,
+        self.process = mp.Process(target=faceutils.recognize_face_process,
                                   args=(self.image_queue, self.result_queue, self.db, self.user, self.passwd, self.tolerance, ))
         self.process.start()
 
@@ -141,7 +142,7 @@ class ResultAnalysis(QtCore.QObject):
         self.process = None
 
     def start_analyzing(self):
-        self.process = mp.Process(target=utils.analyze_result_process,
+        self.process = mp.Process(target=faceutils.analyze_result_process,
                                   args=(self.result_queue, self.info_queue, self.db, self.user, self.passwd))
         self.process.start()
 
@@ -168,7 +169,7 @@ class ResultDisplayWidget(QtWidgets.QWidget):
         super().__init__()
 
         self.info_queue = info_queue
-        self.result_label = QtWidgets.QLabel('Name : --\nDistance : --\n')
+        self.result_label = QtWidgets.QLabel('')
 
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(self.result_label)
@@ -209,8 +210,8 @@ class StrangerEntryWidget(QtWidgets.QWidget):
 
         self.img_label  = QtWidgets.QLabel()
         self.img_label.setPixmap(QtGui.QPixmap('./img/dog.jpg').scaled(128, 128, QtCore.Qt.KeepAspectRatio))
-        self.name_input = QtWidgets.QLineEdit('Your name')
-        self.enter_button = QtWidgets.QPushButton('Enter New Data')
+        self.name_input = QtWidgets.QLineEdit('Name')
+        self.enter_button = QtWidgets.QPushButton('Enter')
 
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(self.img_label)
@@ -228,7 +229,7 @@ class StrangerEntryWidget(QtWidgets.QWidget):
         if not os.path.exists(full_path):
             os.mkdir(full_path)
 
-        face = utils.detect_face(self.image, full_path)
+        face = faceutils.detect_face(self.image, full_path)
         if face is not None:
             # show the image
             self.img_label.setPixmap(QtGui.QPixmap(self.get_QImage(face)).scaled(128, 128, QtCore.Qt.KeepAspectRatio))
@@ -259,6 +260,43 @@ class StrangerEntryWidget(QtWidgets.QWidget):
 
 
 
+class WeiboEntryWidget(QtWidgets.QWidget):
+
+    def __init__(self, pic_path, db_name, user, passwd):
+
+        super().__init__()
+
+        self.pic_path = pic_path
+        self.db_user = user
+        self.db_passwd = passwd
+        self.db_name = db_name
+
+        self.person_name_input = QtWidgets.QLineEdit('Name')
+        self.weibo_name_input = QtWidgets.QLineEdit('Weibo nick name')
+        self.enter_button = QtWidgets.QPushButton('Enter')
+
+        layout = QtWidgets.QVBoxLayout()
+        layout.addWidget(self.person_name_input)
+        layout.addWidget(self.weibo_name_input)
+        layout.addWidget(self.enter_button)
+
+        self.enter_button.clicked.connect(self.enter_weibo)
+
+        self.setLayout(layout)
+
+    def enter_weibo(self):
+        person_name = self.person_name_input.text()
+        weibo_user_name = self.weibo_name_input.text()
+        #full_path = self.pic_path + '/' + user_name + '/'
+        # if not os.path.exists(full_path):
+        #     os.mkdir(full_path)
+
+        process = mp.Process(target=weiboclient.weibo_client_process,
+                                args=(self.db_user, self.db_passwd, self.db_name, person_name, weibo_user_name))
+        process.start()
+
+
+
 class MainWidget(QtWidgets.QWidget):
     '''
     @ Summary:
@@ -278,6 +316,7 @@ class MainWidget(QtWidgets.QWidget):
         self.result_analysis = ResultAnalysis(self.result_queue, self.info_queue, db, user, passwd)
         self.result_display_widget = ResultDisplayWidget(self.info_queue)
         self.strange_entry_widget = StrangerEntryWidget(pic_path, db, user, passwd)
+        self.weibo_entry_widget = WeiboEntryWidget(pic_path, db, user, passwd)
 
         self.run_button = QtWidgets.QPushButton('Start')
         self.stop_button = QtWidgets.QPushButton('Stop')
@@ -291,12 +330,16 @@ class MainWidget(QtWidgets.QWidget):
         total_layout = QtWidgets.QHBoxLayout()
         manage_layout = QtWidgets.QVBoxLayout()
         control_layout = QtWidgets.QVBoxLayout()
+        result_layout = QtWidgets.QVBoxLayout()
 
         total_layout.addWidget(self.camera_widget)
         total_layout.addLayout(manage_layout)
+        total_layout.addLayout(result_layout)
 
-        manage_layout.addWidget(self.result_display_widget)
+        result_layout.addWidget(self.result_display_widget)
+
         manage_layout.addWidget(self.strange_entry_widget)
+        manage_layout.addWidget(self.weibo_entry_widget)
         manage_layout.addLayout(control_layout)
 
         control_layout.addWidget(self.run_button)

@@ -16,6 +16,10 @@ Update : 2018 - 05 -15
   * face_recognition
   * PyQt5
   * mysqlclient
+  * wordcloud
+  * jieba
+  * weibo
+  * requests
 
 ## 原理说明
 
