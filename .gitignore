@@ -1,5 +1,3 @@
 .vscode/
 __pycache__/
-pictures/
-data/
-test_result/
+fdr/data/
