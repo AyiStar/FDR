@@ -165,7 +165,43 @@ class ResultDisplayWidget(QtWidgets.QWidget):
 
         super().__init__()
 
+        self._MAX_WIDGET_NUM = 2
         self.info_queue = info_queue
+        self.single_display_widget_list = []
+
+        for i in range(self._MAX_WIDGET_NUM):
+            self.single_display_widget_list.append(SingleResultDisplayWidget())
+
+        layout = QtWidgets.QHBoxLayout()
+        for widget in self.single_display_widget_list:
+            layout.addWidget(widget)
+        self.setLayout(layout)
+
+    def info_slot(self):
+
+        # result_info : [info]
+        # info : {key:value}
+        result_info = self.info_queue.get(True)
+
+        self.clear_all_widgets()
+        if len(result_info) > 0:
+            for i, info in enumerate(result_info):
+                self.single_display_widget_list[i].display(info)
+        else:
+            self.single_display_widget_list[0].result_label.setText('No face detected')
+
+    def clear_all_widgets(self):
+        for widget in self.single_display_widget_list:
+            widget.clear()
+
+
+
+class SingleResultDisplayWidget(QtWidgets.QWidget):
+
+    def __init__(self):
+
+        super().__init__()
+
         self.word_cloud_label = QtWidgets.QLabel()
         self.network_label = QtWidgets.QLabel()
         self.result_label = QtWidgets.QLabel()
@@ -176,46 +212,42 @@ class ResultDisplayWidget(QtWidgets.QWidget):
         layout.addWidget(self.result_label)
         self.setLayout(layout)
 
-    def info_slot(self):
+    def display(self, info):
 
-        # result_info : [info]
-        # info : {key:value}
-        result_info = self.info_queue.get(True)
+        text = []
+        _SIZE = 200
 
-        if len(result_info) > 0:
-            text = []
-            for info in result_info:
-
-                if 'word_cloud' in info:
-                    word_cloud = cv2.imread(info['word_cloud'])
-                    word_cloud = gui_utils.get_QImage(word_cloud)
-                    self.word_cloud_label.setPixmap(QtGui.QPixmap(word_cloud.scaled(128, 128, QtCore.Qt.KeepAspectRatio)))
-                else:
-                    self.word_cloud_label.setPixmap(QtGui.QPixmap('./resources/icons/person.png').scaled(128, 128, QtCore.Qt.KeepAspectRatio))
-
-                if 'network' in info:
-                    network = cv2.imread(info['network'])
-                    network = gui_utils.get_QImage(network)
-                    self.network_label.setPixmap(QtGui.QPixmap(network.scaled(256, 256, QtCore.Qt.KeepAspectRatio)))
-                else:
-                    self.network_label.setPixmap(QtGui.QPixmap('./resources/icons/person.png').scaled(128, 128, QtCore.Qt.KeepAspectRatio))
-
-
-                name = info['name']
-                if name != '':
-                    text.append('Name : ' + name + '\n')
-                    text.append('Total meet times: {0}\n'.format(info['num_meets']))
-                    text.append('Past three meets : \n')
-                    for t, p in zip(info['meet_times'], info['meet_places']):
-                        text.append(t + ' , ' + p + '\n')
-                else:
-                    text.append('A person never seen\n')
-                text.append('\n')
-            self.result_label.setText(''.join(text))
+        if 'word_cloud' in info:
+            word_cloud = cv2.imread(info['word_cloud'])
+            word_cloud = gui_utils.get_QImage(word_cloud)
+            self.word_cloud_label.setPixmap(QtGui.QPixmap(word_cloud.scaled(_SIZE, _SIZE, QtCore.Qt.KeepAspectRatio)))
         else:
-            self.word_cloud_label.setPixmap(QtGui.QPixmap())
-            self.network_label.setPixmap(QtGui.QPixmap())
-            self.result_label.setText('No face detected')
+            self.word_cloud_label.setPixmap(QtGui.QPixmap('./resources/icons/person.png').scaled(_SIZE, _SIZE, QtCore.Qt.KeepAspectRatio))
+
+        if 'network' in info:
+            network = cv2.imread(info['network'])
+            network = gui_utils.get_QImage(network)
+            self.network_label.setPixmap(QtGui.QPixmap(network.scaled(_SIZE, _SIZE, QtCore.Qt.KeepAspectRatio)))
+        else:
+            self.network_label.setPixmap(QtGui.QPixmap('./resources/icons/social_network.jpg').scaled(_SIZE, _SIZE, QtCore.Qt.KeepAspectRatio))
+
+        name = info['name']
+        if name != '':
+            text.append('Name : ' + name + '\n')
+            text.append('Total meet times: {0}\n'.format(info['num_meets']))
+            text.append('Past three meets : \n')
+            for t, p in zip(info['meet_times'], info['meet_places']):
+                text.append(t + ' , ' + p + '\n')
+        else:
+            text.append('A person never seen\n')
+        text.append('\n')
+        self.result_label.setText(''.join(text))
+
+
+    def clear(self):
+        self.word_cloud_label.setPixmap(QtGui.QPixmap())
+        self.network_label.setPixmap(QtGui.QPixmap())
+        self.result_label.setText('')
 
 
 
@@ -251,7 +283,6 @@ class StrangerEntryWidget(QtWidgets.QWidget):
 
     def enter_stranger(self):
         person_name = self.name_input.text()
-
         process = mp.Process(target=gui_utils.stranger_entry_process,
                                 args=(self.db_user, self.db_passwd, self.db_name, person_name, self.image, self.change_queue))
         process.start()
@@ -342,9 +373,13 @@ class MainWidget(QtWidgets.QWidget):
     @ Summary:
         The main widget, combining the widgets above.
     '''
-    def __init__(self, db, user, passwd, video=0):
+    def __init__(self, db_user, db_passwd, db_name, video=0):
 
         super().__init__()
+
+        self.db_user = db_user
+        self.db_passwd = db_passwd
+        self.db_name = db_name
 
         self.image_queue = mp.Queue()
         self.result_queue = mp.Queue()
@@ -353,15 +388,19 @@ class MainWidget(QtWidgets.QWidget):
 
         self.record_video = RecordVideo(self.image_queue, self.info_queue, video=video)
         self.camera_widget = CameraWidget()
-        self.face_recognition = FaceRecognition(self.image_queue, self.result_queue, self.change_queue, db, user, passwd)
-        self.result_analysis = ResultAnalysis(self.result_queue, self.info_queue, self.change_queue, db, user, passwd)
+        self.face_recognition = FaceRecognition(self.image_queue, self.result_queue, self.change_queue, db_name, db_user, db_passwd)
+        self.result_analysis = ResultAnalysis(self.result_queue, self.info_queue, self.change_queue, db_name, db_user, db_passwd)
         self.result_display_widget = ResultDisplayWidget(self.info_queue)
-        self.strange_entry_widget = StrangerEntryWidget(db, user, passwd, self.change_queue)
-        self.weibo_entry_widget = WeiboEntryWidget('./data/wordcloud/', db, user, passwd)
-        self.relation_entry_widget = RelationEntryWidget(db, user, passwd)
+        self.strange_entry_widget = StrangerEntryWidget(db_name, db_user, db_passwd, self.change_queue)
+        self.weibo_entry_widget = WeiboEntryWidget('./data/wordcloud/', db_name, db_user, db_passwd)
+        self.relation_entry_widget = RelationEntryWidget(db_name, db_user, db_passwd)
 
+        self.manage_window = None
+
+        self.reset_button = QtWidgets.QPushButton('Reset')
+        self.manage_button = QtWidgets.QPushButton('Manage')
         self.run_button = QtWidgets.QPushButton('Start')
-        self.stop_button = QtWidgets.QPushButton('Stop')
+        self.stop_button = QtWidgets.QPushButton('Pause')
         self.exit_button = QtWidgets.QPushButton('Exit')
 
         self.record_video.image_signal.connect(self.camera_widget.image_slot)
@@ -390,8 +429,12 @@ class MainWidget(QtWidgets.QWidget):
 
         control_layout.addWidget(self.run_button)
         control_layout.addWidget(self.stop_button)
+        control_layout.addWidget(self.manage_button)
+        control_layout.addWidget(self.reset_button)
         control_layout.addWidget(self.exit_button)
 
+        self.reset_button.clicked.connect(self.setup)
+        self.manage_button.clicked.connect(self.show_manage_window)
         self.run_button.clicked.connect(self.record_video.start_recording)
         self.run_button.clicked.connect(self.face_recognition.start_recognizing)
         self.run_button.clicked.connect(self.result_analysis.start_analyzing)
@@ -403,6 +446,13 @@ class MainWidget(QtWidgets.QWidget):
         self.exit_button.clicked.connect(QtCore.QCoreApplication.quit)
         self.setLayout(total_layout)
 
+    def show_manage_window(self):
+        self.manage_window = ManageWindow(self.db_user, self.db_passwd, self.db_name, self.change_queue)
+        self.manage_window.show()
+
+    def setup(self):
+        os.system('./setup.sh {0}'.format(self.db_user))
+
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -410,10 +460,10 @@ class MainWindow(QtWidgets.QMainWindow):
     @ Summary:
         The main window containging the main widget.
     '''
-    def __init__(self, db, user, passwd, video=0):
+    def __init__(self, db_user, db_passwd, db_name, video=0):
 
         super().__init__()
-        self.main_widget = MainWidget(db, user, passwd, video=video)
+        self.main_widget = MainWidget(db_user, db_passwd, db_name, video=video)
         self.setCentralWidget(self.main_widget)
         self.setWindowTitle('Face Detection & Recognition System')
         self.setWindowIcon(QtGui.QIcon('./resources/icons/icon.jpg'))
@@ -421,7 +471,121 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
 
+class ManageWidget(QtWidgets.QWidget):
+
+    def __init__(self, db_user, db_passwd, db_name, change_queue):
+
+        super().__init__()
+
+        self.change_queue = change_queue
+        self.person_widget_list = []
+        self.exit_button = QtWidgets.QPushButton('Exit')
+
+        total_layout = QtWidgets.QVBoxLayout()
+        main_layout = QtWidgets.QGridLayout()
+
+        db_conn = MySQLdb.connect(user=db_user, passwd=db_passwd, db=db_name)
+        cursor = db_conn.cursor()
+        cursor.execute('SELECT person_ID FROM Persons')
+        person_ids = [x[0] for x in cursor.fetchall()]
+
+        for i, person_id in enumerate(person_ids):
+            self.person_widget_list.append(PersonManageWidget(db_user, db_passwd, db_name, person_id, self.change_queue))
+            main_layout.addWidget(self.person_widget_list[i], i//3, i%3)
+
+        total_layout.addLayout(main_layout)
+        total_layout.addWidget(self.exit_button)
+
+        self.setLayout(total_layout)
+
+
+
+class PersonManageWidget(QtWidgets.QWidget):
+
+    def __init__ (self, db_user, db_passwd, db_name, person_id, change_queue):
+
+        super().__init__()
+
+        self.db_user = db_user
+        self.db_passwd = db_passwd
+        self.db_name = db_name
+        self.person_id = person_id
+        self.change_queue = change_queue
+
+        self.photo_label = QtWidgets.QLabel()
+        self.info_label = QtWidgets.QLabel('')
+        self.name_input_label = QtWidgets.QLineEdit('')
+        self.alter_button = QtWidgets.QPushButton('Alter')
+        self.delete_button = QtWidgets.QPushButton('Delete')
+
+        if os.path.exists('./data/photo/' + person_id + '.jpg'):
+            self.photo_label.setPixmap(QtGui.QPixmap('./data/photo/' + person_id + '.jpg').scaled(200, 150, QtCore.Qt.KeepAspectRatio))
+        else:
+            self.photo_label.setPixmap(QtGui.QPixmap('./resources/icons/question.jpg').scaled(200, 150, QtCore.Qt.KeepAspectRatio))
+
+        db_conn = MySQLdb.connect(user=db_user, passwd=db_passwd, db=db_name)
+        cursor = db_conn.cursor()
+        cursor.execute('SELECT name FROM Persons WHERE person_ID=%s', (person_id,))
+        self.name = cursor.fetchone()[0]
+        cursor.execute('SELECT COUNT(meet_ID) FROM Meets WHERE person_ID=%s', (person_id,))
+        self.meet_times = cursor.fetchone()[0]
+        db_conn.close()
+
+        self.set_info_text()
+
+        self.alter_button.clicked.connect(self.alter_person)
+        self.delete_button.clicked.connect(self.delete_person)
+
+        total_layout = QtWidgets.QHBoxLayout()
+        control_layout = QtWidgets.QVBoxLayout()
+
+        total_layout.addWidget(self.photo_label)
+        total_layout.addLayout(control_layout)
+
+        control_layout.addWidget(self.info_label)
+        control_layout.addWidget(self.name_input_label)
+        control_layout.addWidget(self.alter_button)
+        control_layout.addWidget(self.delete_button)
+
+        self.setLayout(total_layout)
+
+
+    def delete_person(self):
+        gui_utils.delete_person(self.db_user, self.db_passwd, self.db_name, self.person_id)
+        self.info_label.setText('Deleted')
+        self.photo_label.setPixmap(QtGui.QPixmap('./resources/icons/question.jpg').scaled(200, 150, QtCore.Qt.KeepAspectRatio))
+        self.change_queue.put(0)
+
+
+    def alter_person(self):
+        alter_name = self.name_input_label.text()
+        gui_utils.alter_person(self.db_user, self.db_passwd, self.db_name, self.person_id, alter_name)
+        self.name = alter_name
+        self.set_info_text()
+        self.change_queue.put(0)
+
+
+    def set_info_text(self):
+        info_text = []
+        info_text.append('Name: {0}\n'.format(self.name))
+        info_text.append('Meet times: {0}\n'.format(self.meet_times))
+        self.info_label.setText(''.join(info_text))
+
+
+
+class ManageWindow(QtWidgets.QMainWindow):
+
+    def __init__(self, db_user, db_passwd, db_name, change_queue):
+
+        super().__init__()
+        self.manage_widget = ManageWidget(db_user, db_passwd, db_name, change_queue)
+        self.manage_widget.exit_button.clicked.connect(self.close)
+        self.setCentralWidget(self.manage_widget)
+        self.setWindowTitle('Manage Window')
+        self.setWindowIcon(QtGui.QIcon('./resources/icons/icon.jpg'))
+
+
 if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)
-    main_GUI = MainWindow('FDR', 'ayistar', '', video=0)
+    main_GUI = MainWindow('ayistar', '', 'FDR', video=1)
     sys.exit(app.exec_())

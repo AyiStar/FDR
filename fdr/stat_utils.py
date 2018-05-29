@@ -95,8 +95,10 @@ class NetworkStat:
             G.add_edge(person1_id, person_id)
             edge_labels[(person1_id, person_id)] = relation_type
 
-        nx.draw(G, nx.spring_layout(G), labels=node_labels)
-        nx.draw_networkx_edge_labels(G, nx.spring_layout(G), edge_labels)
+        pos = nx.spring_layout(G)
+        nx.draw_networkx(G, pos, labels=node_labels)
+        #nx.draw_networkx_edges(G, pos)
+        nx.draw_networkx_edge_labels(G, pos, edge_labels)
         plt.savefig('./data/network/' + person_id + '.jpg')
         plt.clf()
         db_conn.close()
