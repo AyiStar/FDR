@@ -40,12 +40,14 @@ class WeiboStat:
 
     def generate_word_cloud(self, pic_path=None, weibo_user_name=None):
         mask_img = np.array(Image.open('./resources/icons/person.png'))
-        word_cloud = WordCloud(font_path='./resources/font.ttf', relative_scaling=.5, mask=mask_img,
-                                background_color='white')
+        word_cloud = WordCloud(font_path='./resources/font.ttf', relative_scaling=.5,
+                                width=640, height=480,
+                                background_color='black')
         word_cloud.generate_from_frequencies(self.word_stat)
 
         if (pic_path is not None) and (weibo_user_name is not None):
-            plt.imshow(word_cloud, interpolation='bilinear')
+            plt.axes([0,0,1,1])
+            plt.imshow(word_cloud, interpolation='nearest')
             plt.axis('off')
             path = pic_path + '/' + weibo_user_name + '.jpg'
             plt.savefig(path)

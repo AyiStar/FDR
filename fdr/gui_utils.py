@@ -222,17 +222,16 @@ def stranger_entry_process(db_user, db_passwd, db_name, person_name, image, q_ch
 
 
 
-
 def weibo_entry_process(db_user, db_passwd, db_name, person_name, weibo_user_name):
     cookie = {
-            "Cookie": '_T_WM=897a5cddc91313eb40a4d44efe82c041; SUB=_2A252B5M7DeRhGeRG6FsQ9SzPwjyIHXVVCz1zrDV6PUJbkdANLU7ykW1NUjSIDKEeHdnG6F3Owi33LiKgDU1zYT28; SUHB=0z1R34lEPLCsQs; SCF=Aurel-CXoF707U2FuZTejk20gZCmrDS1Ehi56ro6GtPtrzKDJCFJ88uDcB_NcEOZDfXZ7KHA6niumfXCilyuTXs.; SSOLoginState=1526981485; M_WEIBOCN_PARAMS=uicode%3D20000174%26featurecode%3D20000320%26fid%3Dhotword; MLOGIN=1',
+            "Cookie": '_T_WM=46ac77aa23a8c1ecba62cea35d74782a; SUB=_2A252M0H0DeRhGeBP6FcU8CbEwzyIHXVV3G-8rDV6PUJbkdANLW_9kW1NRU6EfTCytvr8Jijab7SH2IrbDcZ6rBBK; SUHB=0M2Vamy4SBy7uA; SCF=ArZJ2F9V-QuNENdMfe1ebva5AQUlf13tiq0ofE3CYdI9N-YhR3ydNMtVgWq23eD_wmj5kfNH_2EvoD_QMK9eCJg.; M_WEIBOCN_PARAMS=luicode%3D10000011%26lfid%3D102803_ctg1_8999_-_ctg1_8999_home; MLOGIN=1',
             }
-    wb = WeiboClient(cookie=cookie, db_user=db_user, db_passwd=db_passwd, db_name=db_name)
+    wb = weibo_utils.WeiboClient(cookie=cookie, db_user=db_user, db_passwd=db_passwd, db_name=db_name)
     uid = wb.get_uid(weibo_user_name)
     if uid is not None:
-        #if wb.save_info(person_name, weibo_user_name, uid) == True:
+        wb.save_info(person_name, weibo_user_name, uid)
         wb.get_weibo([uid])
-        ws = WeiboStat(db_user, db_passwd, db_name)
+        ws = stat_utils.WeiboStat(db_user, db_passwd, db_name)
         ws.get_text(uid)
         ws.word_stat()
         ws.generate_word_cloud(pic_path='./data/wordcloud/', weibo_user_name=weibo_user_name)
@@ -284,7 +283,11 @@ def delete_person(db_user, db_passwd, db_name, person_id):
 
 def alter_person(db_user, db_passwd, db_name, person_id, alter_name):
     db_conn = MySQLdb.connect(user=db_user, passwd=db_passwd, db=db_name)
+    db_conn.set_character_set('utf8')
     cursor = db_conn.cursor()
+    cursor.execute('SET NAMES utf8;')
+    cursor.execute('SET CHARACTER SET utf8;')
+    cursor.execute('SET character_set_connection=utf8;')
 
     cursor.execute('SELECT name FROM Persons WHERE person_ID=%s', (person_id,))
     origin_name = cursor.fetchone()[0]

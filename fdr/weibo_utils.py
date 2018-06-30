@@ -73,7 +73,7 @@ class WeiboClient:
 
                 for n in range(1, num+1):
                     print('{0}: {1}/{2} pages'.format(user_name, n, num))
-                    url2 = 'http://weibo.cn/u/%s?page=%s' % (uid,  n)
+                    url2 = 'http://weibo.cn/u/%s?page=%s' % (uid, n)
                     html2 = requests.get(url2, cookies=self.cookie, headers=header, timeout = 10)
                     time.sleep(3)
                     soup2 = BeautifulSoup(html2.text, 'lxml').find_all('div', class_='c')
@@ -253,9 +253,6 @@ class WeiboClient:
                         (person_id, nick_name, uid))
         self.db_conn.commit()
         return True
-
-
-
 
 
 

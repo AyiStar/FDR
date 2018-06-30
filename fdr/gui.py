@@ -2,7 +2,6 @@
 
 import os
 import sys
-import time
 import pickle
 import multiprocessing as mp
 import threading
@@ -587,5 +586,5 @@ class ManageWindow(QtWidgets.QMainWindow):
 
 if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)
-    main_GUI = MainWindow('ayistar', '', 'FDR', video=1)
+    main_GUI = MainWindow('ayistar', '', 'FDR', video=0)
     sys.exit(app.exec_())
