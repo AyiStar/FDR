@@ -85,8 +85,12 @@ class MainWindow(QtWidgets.QMainWindow):
         videoAct = QtWidgets.QAction(QtGui.QIcon('./resources/icons/video.png'), '视频', self)
         videoAct.triggered.connect(self.on_video_action)
 
+        # start/stop action
+        start_stopAct = QtWidgets.QAction(QtGui.QIcon('./resources/icons/start_stop.jpg'), '开始/暂停', self)
+        # start_stopAct.triggered.connect(self.on_start_stop_action)
 
         tool_bar = self.addToolBar('工具栏')
+        tool_bar.addAction(start_stopAct)
         tool_bar.addAction(refreshAct)
         tool_bar.addAction(videoAct)
         tool_bar.addAction(searchAct)
