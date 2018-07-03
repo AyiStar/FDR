@@ -1,8 +1,10 @@
+
 import MySQLdb
 from wordcloud import WordCloud
 import jieba
 import jieba.analyse
 import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
 from PIL import Image
 import numpy as np
 import networkx as nx
@@ -67,7 +69,13 @@ class NetworkStat:
 
     def generate_network(self, person_id, pic_path=None):
         db_conn = MySQLdb.connect(user=self.db_user, passwd=self.db_passwd, db=self.db_name)
+        db_conn.set_character_set('utf8')
         cursor = db_conn.cursor()
+        cursor.execute('SET NAMES utf8;')
+        cursor.execute('SET CHARACTER SET utf8;')
+        cursor.execute('SET character_set_connection=utf8;')
+        Chinese_font = fm.FontProperties(fname='./resources/font.ttf')
+        nx.set_fontproperties(Chinese_font)
         G = nx.MultiDiGraph()
         node_labels = {}
         edge_labels = {}
@@ -98,9 +106,10 @@ class NetworkStat:
             edge_labels[(person1_id, person_id)] = relation_type
 
         pos = nx.spring_layout(G)
-        nx.draw_networkx(G, pos, labels=node_labels)
+        plt.axis('off')
+        nx.draw_networkx(G, pos, labels=node_labels, width=1.5, font_size=48)
         #nx.draw_networkx_edges(G, pos)
-        nx.draw_networkx_edge_labels(G, pos, edge_labels)
+        nx.draw_networkx_edge_labels(G, pos, edge_labels, font_size=48)
         plt.savefig('./data/network/' + person_id + '.jpg')
         plt.clf()
         db_conn.close()
