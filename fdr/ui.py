@@ -3,22 +3,47 @@ from PyQt5 import QtWidgets, QtGui, QtCore
 import qdarkstyle
 import MySQLdb
 from datetime import datetime
+import gui_utils
+import multiprocessing as mp
+import numpy as np
+import cv2
 
 
 
 class MainWindow(QtWidgets.QMainWindow):
 
-    def __init__(self, db_login):
+    def __init__(self, db_login, video):
         super().__init__()
+
+        # queues for IPC
+        self.image_queue = mp.Queue()
 
         # main widget
         self.main_widget = MainWidget(db_login)
         self.setCentralWidget(self.main_widget)
         self.setWindowTitle('社交眼镜后台系统')
         self.setWindowIcon(QtGui.QIcon('./resources/icons/icon.jpg'))
-        self.statusBar().showMessage('Ready')
 
-        # menu bar setting
+        # main timer widget
+        self.main_timer_widget = MainTimerWidget(video, self.image_queue)
+
+        # video widget
+        self.video_widget = VideoWidget()
+
+        self.center()
+        self.init_menu_bar()
+        self.init_tool_bar()
+
+    def center(self):
+        # set center of screen
+        frameGm = self.frameGeometry()
+        screen = QtWidgets.QApplication.desktop().screenNumber(QtWidgets.QApplication.desktop().cursor().pos())
+        centerPoint = QtWidgets.QApplication.desktop().screenGeometry(screen).center()
+        # cp = QtWidgets.QDesktopWidget().availableGeometry().center()
+        frameGm.moveCenter(centerPoint)
+        self.move(frameGm.topLeft())
+
+    def init_menu_bar(self):
         menu_bar = self.menuBar()
 
         sort_menu = menu_bar.addMenu('&排序方式')
@@ -41,22 +66,39 @@ class MainWindow(QtWidgets.QMainWindow):
         about_action = QtWidgets.QAction('关于', self)
         help_menu.addAction(about_action)
 
-
-        # tool bar setting
+    def init_tool_bar(self):
+        # exit action
         exitAct = QtWidgets.QAction(QtGui.QIcon('./resources/icons/exit.png'), '退出', self)
         exitAct.setShortcut('Ctrl+Q')
         exitAct.triggered.connect(QtWidgets.qApp.quit)
+
+        # refresh action
         refreshAct = QtWidgets.QAction(QtGui.QIcon('./resources/icons/refresh.png'), '刷新', self)
         refreshAct.setShortcut('Ctrl+R')
         # refreshAct.triggered.connect(self.main_widget.refresh)
+
+        # search action
         searchAct = QtWidgets.QAction(QtGui.QIcon('./resources/icons/search.png'), '搜索', self)
         searchAct.setShortcut('Ctrl+F')
+
+        # video action
+        videoAct = QtWidgets.QAction(QtGui.QIcon('./resources/icons/video.png'), '视频', self)
+        videoAct.triggered.connect(self.on_video_action)
+
+
         tool_bar = self.addToolBar('工具栏')
         tool_bar.addAction(refreshAct)
+        tool_bar.addAction(videoAct)
         tool_bar.addAction(searchAct)
         tool_bar.addAction(exitAct)
 
-        self.show()
+    def on_video_action(self):
+        if not self.video_widget.isVisible():
+            self.main_timer_widget.image_signal.connect(self.video_widget.image_slot)
+            self.video_widget.show()
+        else:
+            self.main_timer_widget.image_signal.disconnect(self.video_widget.image_slot)
+            self.video_widget.hide()
 
 
 
@@ -64,73 +106,61 @@ class MainWidget(QtWidgets.QWidget):
 
     def __init__(self, db_login):
         super().__init__()
+
         self.layout = QtWidgets.QHBoxLayout()
-        self.person_list_widget = PersonListWidget(db_login)
+        self.person_list_widget = PersonListTabWidget(db_login)
         self.layout.addWidget(self.person_list_widget)
         self.setLayout(self.layout)
 
 
 
-class PersonListWidget(QtWidgets.QWidget):
+class PersonListTabWidget(QtWidgets.QWidget):
 
     def __init__(self, db_login):
         super().__init__()
         self.layout = QtWidgets.QVBoxLayout()
         self.tabs = QtWidgets.QTabWidget()
-        self.known_person_list_widget = self.KnownPersonListWidget(db_login)
-        self.unknown_person_list_widget = self.UnknownPersonListWidget(db_login)
+        self.known_person_list_widget = PersonListWidget(db_login, known=True)
+        self.unknown_person_list_widget = PersonListWidget(db_login, known=False)
         self.tabs.addTab(self.known_person_list_widget, '认识的人')
         self.tabs.addTab(self.unknown_person_list_widget, '陌生人')
         self.layout.addWidget(self.tabs)
         self.setLayout(self.layout)
 
-    class KnownPersonListWidget(QtWidgets.QWidget):
+class PersonListWidget(QtWidgets.QWidget):
 
-        def __init__(self, db_login):
-            super().__init__()
-            self.db_login = db_login
-            self.manage_widgets = {}
-            self.layout = QtWidgets.QGridLayout()
-            self.setMinimumWidth(600)
-            self.refresh()
-            self.setLayout(self.layout)
+    def __init__(self, db_login, known):
+        super().__init__()
+        self.db_login = db_login
+        self.known = known
+        self.manage_widgets = {}
+        self.layout = QtWidgets.QGridLayout()
+        self.setMinimumWidth(600)
+        self.refresh()
+        self.setLayout(self.layout)
 
-        def refresh(self):
-            db_conn = MySQLdb.connect(user=self.db_login['user'], passwd=self.db_login['passwd'], db=self.db_login['db'])
-            cursor = db_conn.cursor()
+    def refresh(self):
+        db_conn = MySQLdb.connect(user=self.db_login['user'], passwd=self.db_login['passwd'], db=self.db_login['db'])
+        cursor = db_conn.cursor()
+        if self.known:
             cursor.execute('SELECT person_ID FROM Persons WHERE name!=%s', ('Unknown',))
-            person_ids = [x[0] for x in cursor.fetchall()]
+        else:
+            cursor.execute('SELECT person_ID FROM Persons WHERE name=%s', ('Unknown',))
+        person_ids = [x[0] for x in cursor.fetchall()]
 
-            for i, person_id in enumerate(person_ids):
-                button = QtWidgets.QPushButton()
-                button.setFixedSize(QtCore.QSize(200, 150))
-                if os.path.exists('./data/photo/' + person_id + '.jpg'):
-                    button.setIcon(QtGui.QIcon('./data/photo/' + person_id + '.jpg'))
-                else:
-                    button.setIcon(QtGui.QIcon('./resources/icons/question.jpg'))
-                button.setIconSize(QtCore.QSize(200, 150))
-                self.manage_widgets[person_id] = PersonManageWidget(self.db_login, person_id)
-                button.clicked.connect(self.manage_widgets[person_id].show)
-                self.layout.addWidget(button, i//3, i%3)
+        for i, person_id in enumerate(person_ids):
+            button = QtWidgets.QPushButton()
+            button.setFixedSize(QtCore.QSize(200, 150))
+            if os.path.exists('./data/photo/' + person_id + '.jpg'):
+                button.setIcon(QtGui.QIcon('./data/photo/' + person_id + '.jpg'))
+            else:
+                button.setIcon(QtGui.QIcon('./resources/icons/question.jpg'))
+            button.setIconSize(QtCore.QSize(200, 150))
+            self.manage_widgets[person_id] = PersonManageWidget(self.db_login, person_id)
+            button.clicked.connect(self.manage_widgets[person_id].show)
+            self.layout.addWidget(button, i//3, i%3)
 
-            db_conn.close()
-
-
-
-
-
-    class UnknownPersonListWidget(QtWidgets.QWidget):
-
-        def __init__(self, db_login):
-            super().__init__()
-            self.layout = QtWidgets.QGridLayout()
-            self.refresh()
-            self.setLayout(self.layout)
-
-        def refresh(self):
-            photo_label = QtWidgets.QLabel()
-            photo_label.setPixmap(QtGui.QPixmap('./resources/icons/question.jpg').scaled(200, 150, QtCore.Qt.KeepAspectRatio))
-            self.layout.addWidget(photo_label, 0, 0)
+        db_conn.close()
 
 
 
@@ -321,6 +351,62 @@ class PersonManageWidget(QtWidgets.QWidget):
 
 
 
+class MainTimerWidget(QtWidgets.QWidget):
+
+    image_signal = QtCore.pyqtSignal(np.ndarray)
+    info_signal = QtCore.pyqtSignal()
+
+    def __init__(self, video, image_queue):
+        super().__init__()
+        self.timer = QtCore.QBasicTimer()
+        self.camera = cv2.VideoCapture(video)
+        self.image_queue = image_queue
+
+    def start_timing(self):
+        self.timer.start(0, self)
+
+    def stop_timing(self):
+        self.timer.stop()
+
+    def timerEvent(self, event):
+        if (event.timerId() != self.timer.timerId()):
+            return
+
+        read, image = self.camera.read()
+        if read:
+            self.image_signal.emit(image)
+            if self.image_queue.empty():
+                self.image_queue.put(image)
+
+
+
+class VideoWidget(QtWidgets.QWidget):
+    '''
+    @ Summary:
+        On receiving the image signal emitted by RecordVideo,
+        this widget do face recognition for the image,
+        and then emit the match result, including name and distance.
+    @ Notes:
+        We could also change the image to display,
+        for example, draw rectangles and matched names, etc.
+        But we display those results on the top-right of the GUI,
+        using RecognitionResultWidget.
+    '''
+
+    def __init__(self, width=640, height=480):
+        super().__init__()
+        self.image = QtGui.QImage('./resources/icons/pig.jpg')
+        self.setFixedSize(width, height)
+
+    def image_slot(self, frame):
+        self.image = gui_utils.get_QImage(frame)
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QtGui.QPainter(self)
+        painter.drawImage(0, 0, self.image)
+        self.image = QtGui.QImage()
+
 
 def main():
     app = QtWidgets.QApplication(sys.argv)
@@ -328,7 +414,7 @@ def main():
                         + 'QLabel{qproperty-alignment: AlignCenter;}'
                         + 'QLabel{font-family: "宋体";}'
                     )
-    main = MainWindow({'user':'ayistar', 'passwd':'', 'db':'FDR'})
+    main = MainWindow({'user':'ayistar', 'passwd':'', 'db':'FDR'}, video=0)
     main.show()
     sys.exit(app.exec_())
 
