@@ -17,18 +17,26 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # queues for IPC
         self.image_queue = mp.Queue()
+        self.result_queue = mp.Queue()
+        self.update_queue = mp.Queue()
+        self.info_queue = mp.Queue()
 
         # main widget
-        self.main_widget = MainWidget(db_login)
+        self.main_widget = MainWidget(db_login, self.update_queue)
         self.setCentralWidget(self.main_widget)
         self.setWindowTitle('社交眼镜后台系统')
         self.setWindowIcon(QtGui.QIcon('./resources/icons/icon.jpg'))
 
-        # main timer widget
-        self.main_timer_widget = MainTimerWidget(video, self.image_queue)
-
-        # video widget
+        self.main_timer_widget = MainTimerWidget(video, self.image_queue, self.update_queue)
         self.video_widget = VideoWidget()
+        self.face_recognition = FaceRecognition(self.image_queue, self.result_queue, db_login)
+        self.result_analysis = ResultAnalysis(self.result_queue, self.info_queue, self.update_queue, db_login)
+
+        self.main_timer_widget.update_signal.connect(self.main_widget.update_slot)
+        self.main_timer_widget.update_signal.connect(self.face_recognition.update_slot)
+
+        self.face_recognition.start_recognizing()
+        self.result_analysis.start_analyzing()
 
         self.center()
         self.init_menu_bar()
@@ -47,11 +55,9 @@ class MainWindow(QtWidgets.QMainWindow):
         menu_bar = self.menuBar()
 
         sort_menu = menu_bar.addMenu('&排序方式')
-        sort_by_name_action = QtWidgets.QAction('按姓名排序', self, checkable=True)
         sort_by_recent_meet_action = QtWidgets.QAction('按见面时间排序', self, checkable=True)
         sort_by_meet_times_action = QtWidgets.QAction('按见面次数排序', self, checkable=True)
-        sort_by_name_action.setChecked(True)
-        sort_menu.addAction(sort_by_name_action)
+        sort_by_recent_meet_action.setChecked(True)
         sort_menu.addAction(sort_by_recent_meet_action)
         sort_menu.addAction(sort_by_meet_times_action)
 
@@ -70,7 +76,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # exit action
         exitAct = QtWidgets.QAction(QtGui.QIcon('./resources/icons/exit.png'), '退出', self)
         exitAct.setShortcut('Ctrl+Q')
-        exitAct.triggered.connect(QtWidgets.qApp.quit)
+        exitAct.triggered.connect(self.on_exit_action)
 
         # refresh action
         refreshAct = QtWidgets.QAction(QtGui.QIcon('./resources/icons/refresh.png'), '刷新', self)
@@ -87,7 +93,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # start/stop action
         start_stopAct = QtWidgets.QAction(QtGui.QIcon('./resources/icons/start_stop.jpg'), '开始/暂停', self)
-        # start_stopAct.triggered.connect(self.on_start_stop_action)
+        start_stopAct.triggered.connect(self.on_start_stop_action)
 
         tool_bar = self.addToolBar('工具栏')
         tool_bar.addAction(start_stopAct)
@@ -104,21 +110,40 @@ class MainWindow(QtWidgets.QMainWindow):
             self.main_timer_widget.image_signal.disconnect(self.video_widget.image_slot)
             self.video_widget.hide()
 
+    def on_start_stop_action(self):
+        if not self.main_timer_widget.timer.isActive():
+            self.main_timer_widget.start_timing()
+        else:
+            self.main_timer_widget.stop_timing()
+
+    def on_exit_action(self):
+        self.face_recognition.stop_recognizing()
+        self.result_analysis.stop_analyzing()
+        QtWidgets.qApp.quit()
+
+
 
 
 class MainWidget(QtWidgets.QWidget):
 
-    def __init__(self, db_login):
+    def __init__(self, db_login, update_queue):
         super().__init__()
+        self.update_queue = update_queue
 
         self.layout = QtWidgets.QHBoxLayout()
         self.person_list_widget = PersonListTabWidget(db_login)
+        self.person_list_widget.update_signal.connect(lambda: self.update_queue.put(0))
         self.layout.addWidget(self.person_list_widget)
         self.setLayout(self.layout)
+
+    def update_slot(self):
+        self.person_list_widget.refresh()
 
 
 
 class PersonListTabWidget(QtWidgets.QWidget):
+
+    update_signal = QtCore.pyqtSignal()
 
     def __init__(self, db_login):
         super().__init__()
@@ -130,8 +155,19 @@ class PersonListTabWidget(QtWidgets.QWidget):
         self.tabs.addTab(self.unknown_person_list_widget, '陌生人')
         self.layout.addWidget(self.tabs)
         self.setLayout(self.layout)
+        self.known_person_list_widget.update_signal.connect(self.update_signal.emit)
+        self.unknown_person_list_widget.update_signal.connect(self.update_signal.emit)
+
+
+    def refresh(self):
+        self.known_person_list_widget.refresh()
+        self.unknown_person_list_widget.refresh()
+
+
 
 class PersonListWidget(QtWidgets.QWidget):
+
+    update_signal = QtCore.pyqtSignal()
 
     def __init__(self, db_login, known):
         super().__init__()
@@ -139,6 +175,7 @@ class PersonListWidget(QtWidgets.QWidget):
         self.known = known
         self.manage_widgets = {}
         self.layout = QtWidgets.QGridLayout()
+        self.layout.setAlignment(QtCore.Qt.AlignTop)
         self.setMinimumWidth(600)
         self.refresh()
         self.setLayout(self.layout)
@@ -147,24 +184,129 @@ class PersonListWidget(QtWidgets.QWidget):
         db_conn = MySQLdb.connect(user=self.db_login['user'], passwd=self.db_login['passwd'], db=self.db_login['db'])
         cursor = db_conn.cursor()
         if self.known:
-            cursor.execute('SELECT person_ID FROM Persons WHERE name!=%s', ('Unknown',))
+            cursor.execute('SELECT person_ID FROM Persons WHERE name!=%s ORDER BY last_meet_time DESC', ('Unknown',))
         else:
-            cursor.execute('SELECT person_ID FROM Persons WHERE name=%s', ('Unknown',))
+            cursor.execute('SELECT person_ID FROM Persons WHERE name=%s ORDER BY last_meet_time DESC', ('Unknown',))
         person_ids = [x[0] for x in cursor.fetchall()]
 
+        # clear the layout
+        for i in reversed(range(self.layout.count())):
+            self.layout.itemAt(i).widget().setParent(None)
+
         for i, person_id in enumerate(person_ids):
-            button = QtWidgets.QPushButton()
-            button.setFixedSize(QtCore.QSize(200, 150))
-            if os.path.exists('./data/photo/' + person_id + '.jpg'):
-                button.setIcon(QtGui.QIcon('./data/photo/' + person_id + '.jpg'))
-            else:
-                button.setIcon(QtGui.QIcon('./resources/icons/question.jpg'))
-            button.setIconSize(QtCore.QSize(200, 150))
-            self.manage_widgets[person_id] = PersonManageWidget(self.db_login, person_id)
-            button.clicked.connect(self.manage_widgets[person_id].show)
-            self.layout.addWidget(button, i//3, i%3)
+            person_display_widget = PersonDisplayWidget(self.db_login, person_id)
+            person_display_widget.update_signal.connect(self.update_signal.emit)
+            self.layout.addWidget(person_display_widget, i//3, i%3)
 
         db_conn.close()
+
+    def update_slot(self):
+        self.refresh()
+
+
+class PersonDisplayWidget(QtWidgets.QWidget):
+
+    update_signal = QtCore.pyqtSignal()
+
+    def __init__(self, db_login, person_id):
+        super().__init__()
+        self.db_login = db_login
+        self.person_id = person_id
+        self.setFixedWidth(300)
+
+        db_conn = MySQLdb.connect(user=db_login['user'], passwd=db_login['passwd'], db=db_login['db'])
+        db_conn.set_character_set('utf8')
+        cursor = db_conn.cursor()
+        cursor.execute('SET NAMES utf8;')
+        cursor.execute('SET CHARACTER SET utf8;')
+        cursor.execute('SET character_set_connection=utf8;')
+
+        cursor.execute('SELECT name FROM Persons WHERE person_ID=%s', (person_id,))
+        self.name = cursor.fetchone()[0]
+        cursor.execute('SELECT meet_time, meet_place FROM Meets WHERE person_ID=%s ORDER BY meet_time DESC', (person_id,))
+        meet_results = cursor.fetchall()
+        self.last_meet_time = meet_results[0][0].strftime('%Y年%m月%d日%H时%M分')
+        self.last_meet_place = meet_results[0][1]
+        self.meet_times = len(meet_results)
+
+        # button
+        self.button = QtWidgets.QPushButton()
+        self.button.setFixedSize(QtCore.QSize(200, 150))
+        if os.path.exists('./data/photo/' + person_id + '.jpg'):
+            self.button.setIcon(QtGui.QIcon('./data/photo/' + person_id + '.jpg'))
+        else:
+            self.button.setIcon(QtGui.QIcon('./resources/icons/question.jpg'))
+        self.button.setIconSize(QtCore.QSize(200, 150))
+        self.manage_widgets = PersonManageWidget(self.db_login, person_id)
+        self.button.clicked.connect(self.manage_widgets.show)
+
+        # button tips
+        btn_tips = ''.join(['总见面次数: ', str(self.meet_times), '\n',
+                            '最近见面时间: ', self.last_meet_time, '\n',
+                            '最近见面地点: ', self.last_meet_place])
+        self.button.setToolTip(btn_tips)
+
+        # button frame effect
+        self.effect = QtWidgets.QGraphicsDropShadowEffect(self.button)
+        self.effect.setColor(QtGui.QColor(87, 250, 255))
+        self.effect.setOffset(0, 0)
+        self.effect.setBlurRadius(30)
+        self.button.setGraphicsEffect(self.effect)
+        self.button.setGraphicsEffect(None)
+
+
+        # twinkle timer
+        self.twinkle_timer = QtCore.QBasicTimer()
+
+        # label
+        label = QtWidgets.QLabel(self.name)
+
+        # context menu
+        self.context_menu = QtWidgets.QMenu(self)
+        self.check_action = self.context_menu.addAction('&查看')
+        self.check_action.triggered.connect(self.manage_widgets.show)
+        self.alter_action = self.context_menu.addAction('&修改')
+        self.delete_action = self.context_menu.addAction('&删除')
+        self.delete_action.triggered.connect(self.on_delete_action)
+
+        self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(lambda: self.context_menu.exec_(QtGui.QCursor.pos()))
+
+        self.layout = QtWidgets.QVBoxLayout()
+        self.layout.setAlignment(QtCore.Qt.AlignCenter)
+        self.layout.addWidget(self.button)
+        self.layout.addWidget(label)
+        self.setLayout(self.layout)
+
+        db_conn.close()
+
+    def twinkle(self):
+        pass
+
+    def timerEvent(self, event):
+        if (event.timerId() != self.twinkle_timer.timerId()):
+            return
+
+
+    def on_delete_action(self):
+        confirm_msg = ''.join(['确认要删除', self.name, '吗?'])
+        reply = QtWidgets.QMessageBox.question(self, 'Message', confirm_msg,
+                                                QtWidgets.QMessageBox.Yes, QtWidgets.QMessageBox.No)
+        if reply == QtWidgets.QMessageBox.Yes:
+            db_conn = MySQLdb.connect(user=self.db_login['user'], passwd=self.db_login['passwd'], db=self.db_login['db'])
+            cursor = db_conn.cursor()
+            cursor.execute('DELETE FROM Persons WHERE person_ID=%s', (self.person_id,))
+            cursor.execute('DELETE FROM Meets   WHERE person_ID=%s', (self.person_id,))
+            cursor.execute('DELETE FROM Vectors WHERE person_ID=%s', (self.person_id,))
+            cursor.execute('DELETE FROM WeiboAccounts WHERE person_ID=%s', (self.person_id,))
+            cursor.execute('DELETE FROM Relations WHERE person1_ID=%s OR person2_ID=%s', (self.person_id, self.person_id))
+
+            # TODO delete weibos as well
+            db_conn.commit()
+            db_conn.close()
+            self.update_signal.emit()
+        else:
+            pass
 
 
 
@@ -358,19 +500,22 @@ class PersonManageWidget(QtWidgets.QWidget):
 class MainTimerWidget(QtWidgets.QWidget):
 
     image_signal = QtCore.pyqtSignal(np.ndarray)
-    info_signal = QtCore.pyqtSignal()
+    update_signal = QtCore.pyqtSignal()
 
-    def __init__(self, video, image_queue):
+    def __init__(self, video, image_queue, update_queue):
         super().__init__()
         self.timer = QtCore.QBasicTimer()
         self.camera = cv2.VideoCapture(video)
         self.image_queue = image_queue
+        self.update_queue = update_queue
 
     def start_timing(self):
         self.timer.start(0, self)
 
     def stop_timing(self):
         self.timer.stop()
+        while not self.image_queue.empty():
+            self.image_queue.get()
 
     def timerEvent(self, event):
         if (event.timerId() != self.timer.timerId()):
@@ -382,25 +527,19 @@ class MainTimerWidget(QtWidgets.QWidget):
             if self.image_queue.empty():
                 self.image_queue.put(image)
 
+        if not self.update_queue.empty():
+            self.update_queue.get()
+            self.update_signal.emit()
+
 
 
 class VideoWidget(QtWidgets.QWidget):
-    '''
-    @ Summary:
-        On receiving the image signal emitted by RecordVideo,
-        this widget do face recognition for the image,
-        and then emit the match result, including name and distance.
-    @ Notes:
-        We could also change the image to display,
-        for example, draw rectangles and matched names, etc.
-        But we display those results on the top-right of the GUI,
-        using RecognitionResultWidget.
-    '''
 
     def __init__(self, width=640, height=480):
         super().__init__()
         self.image = QtGui.QImage('./resources/icons/pig.jpg')
         self.setFixedSize(width, height)
+        self.setWindowTitle('摄像头实时画面')
 
     def image_slot(self, frame):
         self.image = gui_utils.get_QImage(frame)
@@ -410,6 +549,67 @@ class VideoWidget(QtWidgets.QWidget):
         painter = QtGui.QPainter(self)
         painter.drawImage(0, 0, self.image)
         self.image = QtGui.QImage()
+
+
+
+class FaceRecognition(QtCore.QObject):
+
+    def __init__(self, image_queue, result_queue, db_login, tolerance=0.4):
+
+        super().__init__()
+        self.db = db_login['db']
+        self.user = db_login['user']
+        self.passwd = db_login['passwd']
+        self.tolerance = tolerance
+        self.image_queue = image_queue
+        self.result_queue = result_queue
+        self.update_queue = mp.Queue()
+        self.process = None
+
+    def start_recognizing(self):
+        self.process = mp.Process(target=gui_utils.recognize_face_process,
+                                  args=(self.image_queue, self.result_queue, self.update_queue, self.db, self.user, self.passwd, self.tolerance))
+        self.process.start()
+
+    def stop_recognizing(self):
+        if self.process is not None:
+            self.process.terminate()
+        while not self.image_queue.empty():
+            self.image_queue.get()
+        while not self.result_queue.empty():
+            self.result_queue.get()
+
+    def update_slot(self):
+        self.update_queue.put(0)
+
+
+
+class ResultAnalysis(QtCore.QObject):
+    def __init__(self, result_queue, info_queue, change_queue, db_login):
+
+        super().__init__()
+        self.db = db_login['db']
+        self.user = db_login['user']
+        self.passwd = db_login['passwd']
+        self.result_queue = result_queue
+        self.info_queue = info_queue
+        self.change_queue = change_queue
+        self.process = None
+
+    def start_analyzing(self):
+        self.process = mp.Process(target=gui_utils.analyze_result_process,
+                                  args=(self.result_queue, self.info_queue, self.change_queue, self.db, self.user, self.passwd))
+        self.process.start()
+
+
+    def stop_analyzing(self):
+        if self.process is not None:
+            self.process.terminate()
+        while not self.result_queue.empty():
+            self.result_queue.get()
+        while not self.info_queue.empty():
+            self.info_queue.get()
+
 
 
 def main():

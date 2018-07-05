@@ -484,7 +484,11 @@ class ManageWidget(QtWidgets.QWidget):
         main_layout = QtWidgets.QGridLayout()
 
         db_conn = MySQLdb.connect(user=db_user, passwd=db_passwd, db=db_name)
+        db_conn.set_character_set('utf8')
         cursor = db_conn.cursor()
+        cursor.execute('SET NAMES utf8;')
+        cursor.execute('SET CHARACTER SET utf8;')
+        cursor.execute('SET character_set_connection=utf8;')
         cursor.execute('SELECT person_ID FROM Persons')
         person_ids = [x[0] for x in cursor.fetchall()]
 
@@ -523,7 +527,11 @@ class PersonManageWidget(QtWidgets.QWidget):
             self.photo_label.setPixmap(QtGui.QPixmap('./resources/icons/question.jpg').scaled(200, 150, QtCore.Qt.KeepAspectRatio))
 
         db_conn = MySQLdb.connect(user=db_user, passwd=db_passwd, db=db_name)
+        db_conn.set_character_set('utf8')
         cursor = db_conn.cursor()
+        cursor.execute('SET NAMES utf8;')
+        cursor.execute('SET CHARACTER SET utf8;')
+        cursor.execute('SET character_set_connection=utf8;')
         cursor.execute('SELECT name FROM Persons WHERE person_ID=%s', (person_id,))
         self.name = cursor.fetchone()[0]
         cursor.execute('SELECT COUNT(meet_ID) FROM Meets WHERE person_ID=%s', (person_id,))
@@ -586,5 +594,5 @@ class ManageWindow(QtWidgets.QMainWindow):
 
 if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)
-    main_GUI = MainWindow('ayistar', '', 'FDR', video=0)
+    main_GUI = MainWindow('ayistar', '', 'FDR', video='tcp://192.168.1.199:8001')
     sys.exit(app.exec_())

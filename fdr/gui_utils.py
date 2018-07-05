@@ -64,18 +64,18 @@ def recognize_face_process(q_image, q_result, q_change, db, user, passwd, tolera
             else:
                 print('Detected face')
 
-                for (top, right, bottom, left), match in zip(face_locations, face_matches):
-                    # Draw a box around the face
-                    cv2.rectangle(image, (left, top), (right, bottom), (0, 0, 255), 1)
+                # for (top, right, bottom, left), match in zip(face_locations, face_matches):
+                #     # Draw a box around the face
+                #     cv2.rectangle(image, (left, top), (right, bottom), (0, 0, 255), 1)
 
-                    # Draw a label with a name below the face
-                    #cv2.rectangle(frame, (left, bottom - 35), (right, bottom), (0, 0, 255), cv2.FILLED)
-                    font = cv2.FONT_HERSHEY_DUPLEX
-                    cv2.putText(image, match[0]+':'+'%.2f'%(match[1]), (left, bottom), font, 1.0, (0, 0, 255), 1)
+                #     # Draw a label with a name below the face
+                #     #cv2.rectangle(frame, (left, bottom - 35), (right, bottom), (0, 0, 255), cv2.FILLED)
+                #     font = cv2.FONT_HERSHEY_DUPLEX
+                #     cv2.putText(image, match[0]+':'+'%.2f'%(match[1]), (left, bottom), font, 1.0, (0, 0, 255), 1)
 
-                if not os.path.exists('../tests/test_result/'):
-                    os.mkdir('../tests/test_result/')
-                cv2.imwrite('../tests/test_result/' + datetime.strftime(datetime.now(), '%Y-%m-%d-%H-%M-%S') + '.jpg', image)
+                # if not os.path.exists('../tests/test_result/'):
+                #     os.mkdir('../tests/test_result/')
+                # cv2.imwrite('../tests/test_result/' + datetime.strftime(datetime.now(), '%Y-%m-%d-%H-%M-%S') + '.jpg', image)
 
 
 
@@ -183,8 +183,8 @@ def analyze_result_process(q_result, q_info, q_change, db, user, passwd):
                     pass
 
 
-        #print(result_info)
-        q_info.put(result_info)
+        # print(result_info)
+        # q_info.put(result_info)
 
 
 
