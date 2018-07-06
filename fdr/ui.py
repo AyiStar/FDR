@@ -52,6 +52,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def init_menu_bar(self):
         menu_bar = self.menuBar()
+        menu_bar.setNativeMenuBar(False)
 
         sort_menu = menu_bar.addMenu('&排序方式')
         sort_by_recent_meet_action = QtWidgets.QAction('按见面时间排序', self, checkable=True)
@@ -623,31 +624,6 @@ class FaceRecognition(QtCore.QObject):
         self.update_queue_in.put(0)
 
 
-
-# class ResultAnalysis(QtCore.QObject):
-#     def __init__(self,result_queue, info_queue, change_queue, db_login):
-
-#         super().__init__()
-#         self.db = db_login['db']
-#         self.user = db_login['user']
-#         self.passwd = db_login['passwd']
-#         self.result_queue = result_queue
-#         self.info_queue = info_queue
-#         self.change_queue = change_queue
-#         self.process = None
-
-#     def start_analyzing(self):
-#         self.process = mp.Process(target=gui_utils.analyze_result_process,
-#                                   args=(self.result_queue, self.info_queue, self.change_queue, self.db, self.user, self.passwd))
-#         self.process.start()
-
-#     def stop_analyzing(self):
-#         if self.process is not None:
-#             self.process.terminate()
-#         while not self.result_queue.empty():
-#             self.result_queue.get()
-#         while not self.info_queue.empty():
-#             self.info_queue.get()
 
 
 
