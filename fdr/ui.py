@@ -7,6 +7,7 @@ import gui_utils
 import multiprocessing as mp
 import numpy as np
 import cv2
+import time
 
 
 
@@ -19,7 +20,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.image_queue = mp.Queue()
         self.result_queue = mp.Queue()
         self.update_queue = mp.Queue()
-        self.info_queue = mp.Queue()
 
         # main widget
         self.main_widget = MainWidget(db_login, self.update_queue)
@@ -27,16 +27,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setWindowTitle('社交小助手')
         self.setWindowIcon(QtGui.QIcon('./resources/icons/icon.jpg'))
 
-        self.main_timer_widget = MainTimerWidget(video, self.image_queue, self.update_queue)
+        self.main_timer_widget = MainTimerWidget(video, self.image_queue, self.update_queue, self.result_queue)
         self.video_widget = VideoWidget()
-        self.face_recognition = FaceRecognition(self.image_queue, self.result_queue, db_login)
-        self.result_analysis = ResultAnalysis(self.result_queue, self.info_queue, self.update_queue, db_login)
+        self.face_recognition = FaceRecognition(self.image_queue, self.result_queue, self.update_queue, db_login)
 
         self.main_timer_widget.update_signal.connect(self.main_widget.update_slot)
         self.main_timer_widget.update_signal.connect(self.face_recognition.update_slot)
+        self.main_timer_widget.result_signal.connect(self.main_widget.result_slot)
 
         self.face_recognition.start_recognizing()
-        self.result_analysis.start_analyzing()
 
         self.center()
         self.init_menu_bar()
@@ -118,7 +117,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def on_exit_action(self):
         self.face_recognition.stop_recognizing()
-        self.result_analysis.stop_analyzing()
+        self.image_queue.close()
+        self.update_queue.close()
+        self.result_queue.close()
+        time.sleep(0.5)
         QtWidgets.qApp.quit()
 
 
@@ -130,13 +132,17 @@ class MainWidget(QtWidgets.QWidget):
         self.update_queue = update_queue
 
         self.layout = QtWidgets.QHBoxLayout()
-        self.person_list_widget = PersonListTabWidget(db_login)
-        self.person_list_widget.update_signal.connect(lambda: self.update_queue.put(0))
-        self.layout.addWidget(self.person_list_widget)
+        self.person_list_tab_widget = PersonListTabWidget(db_login)
+        self.person_list_tab_widget.update_signal.connect(lambda: self.update_queue.put(0))
+        self.layout.addWidget(self.person_list_tab_widget)
         self.setLayout(self.layout)
 
     def update_slot(self):
-        self.person_list_widget.refresh()
+        self.person_list_tab_widget.refresh()
+
+    def result_slot(self, result):
+        person_id_list = [r[0] for r in result[0]]
+        self.person_list_tab_widget.twinkle(person_id_list)
 
 
 
@@ -162,6 +168,10 @@ class PersonListTabWidget(QtWidgets.QWidget):
         self.known_person_list_widget.refresh()
         self.unknown_person_list_widget.refresh()
 
+    def twinkle(self, person_id_list):
+        self.known_person_list_widget.twinkle(person_id_list)
+        self.unknown_person_list_widget.twinkle(person_id_list)
+
 
 
 class PersonListWidget(QtWidgets.QWidget):
@@ -172,7 +182,7 @@ class PersonListWidget(QtWidgets.QWidget):
         super().__init__()
         self.db_login = db_login
         self.known = known
-        self.manage_widgets = {}
+        self.person_display_widgets = {}
         self.layout = QtWidgets.QGridLayout()
         self.layout.setAlignment(QtCore.Qt.AlignTop)
         self.setMinimumWidth(600)
@@ -189,15 +199,24 @@ class PersonListWidget(QtWidgets.QWidget):
         person_ids = [x[0] for x in cursor.fetchall()]
 
         # clear the layout
+        self.person_display_widgets = {}
         for i in reversed(range(self.layout.count())):
             self.layout.itemAt(i).widget().setParent(None)
 
         for i, person_id in enumerate(person_ids):
-            person_display_widget = PersonDisplayWidget(self.db_login, person_id)
-            person_display_widget.update_signal.connect(self.update_signal.emit)
-            self.layout.addWidget(person_display_widget, i//3, i%3)
+            self.person_display_widgets[person_id] = PersonDisplayWidget(self.db_login, person_id)
+            self.person_display_widgets[person_id].update_signal.connect(self.update_signal.emit)
+            self.layout.addWidget(self.person_display_widgets[person_id], i//3, i%3)
 
         db_conn.close()
+
+    def twinkle(self, person_id_list):
+        for person_id in self.person_display_widgets:
+            if person_id in person_id_list:
+                self.person_display_widgets[person_id].setTwinkle(True)
+            else:
+                self.person_display_widgets[person_id].setTwinkle(False)
+
 
     def update_slot(self):
         self.refresh()
@@ -252,11 +271,10 @@ class PersonDisplayWidget(QtWidgets.QWidget):
         self.effect.setOffset(0, 0)
         self.effect.setBlurRadius(30)
         self.button.setGraphicsEffect(self.effect)
-
+        self.effect.setEnabled(False)
 
         # twinkle timer
         self.twinkle_timer = QtCore.QBasicTimer()
-        self.twinkle()
 
         # label
         label = QtWidgets.QLabel(self.name)
@@ -280,8 +298,12 @@ class PersonDisplayWidget(QtWidgets.QWidget):
 
         db_conn.close()
 
-    def twinkle(self):
-        self.twinkle_timer.start(500, self)
+    def setTwinkle(self, enable):
+        if enable and not self.twinkle_timer.isActive():
+            self.twinkle_timer.start(500, self)
+        if not enable and self.twinkle_timer.isActive():
+            self.twinkle_timer.stop()
+            self.effect.setEnabled(False)
 
     def timerEvent(self, event):
         if (event.timerId() != self.twinkle_timer.timerId()):
@@ -305,7 +327,7 @@ class PersonDisplayWidget(QtWidgets.QWidget):
             cursor.execute('DELETE FROM WeiboAccounts WHERE person_ID=%s', (self.person_id,))
             cursor.execute('DELETE FROM Relations WHERE person1_ID=%s OR person2_ID=%s', (self.person_id, self.person_id))
 
-            # TODO delete weibos as well
+            # TODO delete weibos and photos as well
             db_conn.commit()
             db_conn.close()
             self.update_signal.emit()
@@ -507,12 +529,13 @@ class MainTimerWidget(QtWidgets.QWidget):
     result_signal = QtCore.pyqtSignal(object)
     update_signal = QtCore.pyqtSignal()
 
-    def __init__(self, video, image_queue, update_queue):
+    def __init__(self, video, image_queue, update_queue, result_queue):
         super().__init__()
         self.timer = QtCore.QBasicTimer()
         self.camera = cv2.VideoCapture(video)
         self.image_queue = image_queue
         self.update_queue = update_queue
+        self.result_queue = result_queue
 
     def start_timing(self):
         self.timer.start(0, self)
@@ -521,6 +544,10 @@ class MainTimerWidget(QtWidgets.QWidget):
         self.timer.stop()
         while not self.image_queue.empty():
             self.image_queue.get()
+        while not self.update_queue.empty():
+            self.update_queue.get()
+        while not self.result_queue.empty():
+            self.result_queue.get()
 
     def timerEvent(self, event):
         if (event.timerId() != self.timer.timerId()):
@@ -535,6 +562,10 @@ class MainTimerWidget(QtWidgets.QWidget):
         if not self.update_queue.empty():
             self.update_queue.get()
             self.update_signal.emit()
+
+        if not self.result_queue.empty():
+            result = self.result_queue.get()
+            self.result_signal.emit(result)
 
 
 
@@ -559,7 +590,7 @@ class VideoWidget(QtWidgets.QWidget):
 
 class FaceRecognition(QtCore.QObject):
 
-    def __init__(self, image_queue, result_queue, db_login, tolerance=0.4):
+    def __init__(self, image_queue, result_queue, update_queue, db_login, tolerance=0.4):
 
         super().__init__()
         self.db = db_login['db']
@@ -568,51 +599,55 @@ class FaceRecognition(QtCore.QObject):
         self.tolerance = tolerance
         self.image_queue = image_queue
         self.result_queue = result_queue
-        self.update_queue = mp.Queue()
+        self.update_queue = update_queue
+        self.update_queue_in = mp.Queue()
         self.process = None
 
     def start_recognizing(self):
         self.process = mp.Process(target=gui_utils.recognize_face_process,
-                                  args=(self.image_queue, self.result_queue, self.update_queue, self.db, self.user, self.passwd, self.tolerance))
+                                  args=(self.image_queue, self.result_queue, self.update_queue, self.update_queue_in, self.db, self.user, self.passwd, self.tolerance))
         self.process.start()
 
     def stop_recognizing(self):
         if self.process is not None:
             self.process.terminate()
-        while not self.image_queue.empty():
-            self.image_queue.get()
-        while not self.result_queue.empty():
-            self.result_queue.get()
+        # while not self.result_queue.empty():
+        #     self.result_queue.get()
+        # while not self.update_queue.empty():
+        #     self.update_queue.get()
+        # while not self.update_queue_in.empty():
+        #     self.update_queue_in.get()
+        self.update_queue_in.close()
 
     def update_slot(self):
-        self.update_queue.put(0)
+        self.update_queue_in.put(0)
 
 
 
-class ResultAnalysis(QtCore.QObject):
-    def __init__(self,result_queue, info_queue, change_queue, db_login):
+# class ResultAnalysis(QtCore.QObject):
+#     def __init__(self,result_queue, info_queue, change_queue, db_login):
 
-        super().__init__()
-        self.db = db_login['db']
-        self.user = db_login['user']
-        self.passwd = db_login['passwd']
-        self.result_queue = result_queue
-        self.info_queue = info_queue
-        self.change_queue = change_queue
-        self.process = None
+#         super().__init__()
+#         self.db = db_login['db']
+#         self.user = db_login['user']
+#         self.passwd = db_login['passwd']
+#         self.result_queue = result_queue
+#         self.info_queue = info_queue
+#         self.change_queue = change_queue
+#         self.process = None
 
-    def start_analyzing(self):
-        self.process = mp.Process(target=gui_utils.analyze_result_process,
-                                  args=(self.result_queue, self.info_queue, self.change_queue, self.db, self.user, self.passwd))
-        self.process.start()
+#     def start_analyzing(self):
+#         self.process = mp.Process(target=gui_utils.analyze_result_process,
+#                                   args=(self.result_queue, self.info_queue, self.change_queue, self.db, self.user, self.passwd))
+#         self.process.start()
 
-    def stop_analyzing(self):
-        if self.process is not None:
-            self.process.terminate()
-        while not self.result_queue.empty():
-            self.result_queue.get()
-        while not self.info_queue.empty():
-            self.info_queue.get()
+#     def stop_analyzing(self):
+#         if self.process is not None:
+#             self.process.terminate()
+#         while not self.result_queue.empty():
+#             self.result_queue.get()
+#         while not self.info_queue.empty():
+#             self.info_queue.get()
 
 
 
