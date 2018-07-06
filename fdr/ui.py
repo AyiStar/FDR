@@ -24,7 +24,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # main widget
         self.main_widget = MainWidget(db_login, self.update_queue)
         self.setCentralWidget(self.main_widget)
-        self.setWindowTitle('社交眼镜后台系统')
+        self.setWindowTitle('社交小助手')
         self.setWindowIcon(QtGui.QIcon('./resources/icons/icon.jpg'))
 
         self.main_timer_widget = MainTimerWidget(video, self.image_queue, self.update_queue)
@@ -123,7 +123,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
 
-
 class MainWidget(QtWidgets.QWidget):
 
     def __init__(self, db_login, update_queue):
@@ -204,6 +203,7 @@ class PersonListWidget(QtWidgets.QWidget):
         self.refresh()
 
 
+
 class PersonDisplayWidget(QtWidgets.QWidget):
 
     update_signal = QtCore.pyqtSignal()
@@ -252,11 +252,11 @@ class PersonDisplayWidget(QtWidgets.QWidget):
         self.effect.setOffset(0, 0)
         self.effect.setBlurRadius(30)
         self.button.setGraphicsEffect(self.effect)
-        self.button.setGraphicsEffect(None)
 
 
         # twinkle timer
         self.twinkle_timer = QtCore.QBasicTimer()
+        self.twinkle()
 
         # label
         label = QtWidgets.QLabel(self.name)
@@ -281,11 +281,15 @@ class PersonDisplayWidget(QtWidgets.QWidget):
         db_conn.close()
 
     def twinkle(self):
-        pass
+        self.twinkle_timer.start(500, self)
 
     def timerEvent(self, event):
         if (event.timerId() != self.twinkle_timer.timerId()):
             return
+        if self.effect.isEnabled():
+            self.effect.setEnabled(False)
+        else:
+            self.effect.setEnabled(True)
 
 
     def on_delete_action(self):
@@ -500,6 +504,7 @@ class PersonManageWidget(QtWidgets.QWidget):
 class MainTimerWidget(QtWidgets.QWidget):
 
     image_signal = QtCore.pyqtSignal(np.ndarray)
+    result_signal = QtCore.pyqtSignal(object)
     update_signal = QtCore.pyqtSignal()
 
     def __init__(self, video, image_queue, update_queue):
@@ -585,7 +590,7 @@ class FaceRecognition(QtCore.QObject):
 
 
 class ResultAnalysis(QtCore.QObject):
-    def __init__(self, result_queue, info_queue, change_queue, db_login):
+    def __init__(self,result_queue, info_queue, change_queue, db_login):
 
         super().__init__()
         self.db = db_login['db']
@@ -600,7 +605,6 @@ class ResultAnalysis(QtCore.QObject):
         self.process = mp.Process(target=gui_utils.analyze_result_process,
                                   args=(self.result_queue, self.info_queue, self.change_queue, self.db, self.user, self.passwd))
         self.process.start()
-
 
     def stop_analyzing(self):
         if self.process is not None:

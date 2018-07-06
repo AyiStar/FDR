@@ -20,7 +20,6 @@ import weibo_utils
 
 
 
-
 def get_QImage(image):
     height, width, channel = image.shape
     image = QtGui.QImage(image.data, width, height, 3 * width, QtGui.QImage.Format_RGB888)
@@ -89,6 +88,7 @@ def analyze_result_process(q_result, q_info, q_change, db, user, passwd):
 
     while True:
         face_matches, image = q_result.get(True)
+        print('receive a result')
         result_info = []
 
         for match in face_matches:
@@ -183,7 +183,7 @@ def analyze_result_process(q_result, q_info, q_change, db, user, passwd):
                     pass
 
 
-        # print(result_info)
+        print(result_info)
         # q_info.put(result_info)
 
 
