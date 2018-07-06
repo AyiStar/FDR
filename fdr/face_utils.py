@@ -82,6 +82,7 @@ def store_face(name, img_path, db_conn):
     db_conn.commit()
 
 
+
 def load_faces(db, user, passwd):
     '''
     @ parameter:
@@ -157,7 +158,6 @@ def match_face(distances, tolerance):
 
 
 
-
 def get_geolocation():
     url = 'http://api.map.baidu.com/location/ip?ak=uUNkiGCf08sLOwqXyOhYAUKLdyqhIK6H&sn=e62fe445afb83f1fb6ffe3e43297d6bb'
     req = urllib.request.urlopen(url)
@@ -167,3 +167,10 @@ def get_geolocation():
 
 
 
+def recognize_face_from_file(db_login, file_path):
+    db_conn = MySQLdb.connect(db=db, user=user, passwd=passwd)
+    db_conn.set_character_set('utf8')
+    known_faces = face_utils.load_faces(db, user, passwd)
+    face_locations = []
+    face_encodings = []
+    face_names = []
