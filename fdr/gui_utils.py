@@ -41,9 +41,6 @@ def recognize_face_process(q_image, q_result, q_change, q_change_in, db, user, p
     db_conn = MySQLdb.connect(db=db, user=user, passwd=passwd)
     db_conn.set_character_set('utf8')
     known_faces = face_utils.load_faces(db, user, passwd)
-    face_locations = []
-    face_encodings = []
-    face_names = []
 
     while True:
         image = q_image.get(True)
@@ -100,10 +97,6 @@ def recognize_face_process(q_image, q_result, q_change, q_change_in, db, user, p
                 if unknown_confirm < CONFIRM_GRADE:
                     continue
                 unknown_confirm = 0
-                top = match[2]
-                right = match[3]
-                bottom = match[4]
-                left = match[5]
                 temp_result = face_recognition.face_encodings(image, known_face_locations=[(top, right, bottom, left)])
                 if len(temp_result) == 0:
                     continue
@@ -119,11 +112,12 @@ def recognize_face_process(q_image, q_result, q_change, q_change_in, db, user, p
                                 (current_time, current_place, person_id,))
 
                 # point out the face in the picture
-                cv2.circle(image, (int((left + right)/2), int((top + bottom)/2)),
+                temp_image = image.copy()
+                cv2.circle(temp_image, (int((left + right)/2), int((top + bottom)/2)),
                             int(math.sqrt(((right - left)**2 + (bottom - top)**2))/2),
                             (255,0,0), thickness=7)
 
-                cv2.imwrite('./data/photo/' + person_id + '.jpg', image)
+                cv2.imwrite('./data/photo/' + person_id + '.jpg', temp_image)
                 db_conn.commit()
                 need_update = True
 
@@ -241,8 +235,8 @@ def relation_entry_process(db_user, db_passwd, db_name, person1_name, person2_na
 
 
 
-def delete_person(db_user, db_passwd, db_name, person_id):
-    db_conn = MySQLdb.connect(user=db_user, passwd=db_passwd, db=db_name)
+def delete_person(db_login, person_id):
+    db_conn = MySQLdb.connect(user=db_login['user'], passwd=db_login['passwd'], db=db_login['db'])
     cursor = db_conn.cursor()
 
     cursor.execute('DELETE FROM Persons WHERE person_ID=%s', (person_id,))
@@ -257,31 +251,40 @@ def delete_person(db_user, db_passwd, db_name, person_id):
 
 
 
-def alter_person(db_user, db_passwd, db_name, person_id, alter_name):
-    db_conn = MySQLdb.connect(user=db_user, passwd=db_passwd, db=db_name)
+def alter_person(db_login, person_id, alter_info):
+
+    db_conn = MySQLdb.connect(user=db_login['user'], passwd=db_login['passwd'], db=db_login['db'])
     db_conn.set_character_set('utf8')
     cursor = db_conn.cursor()
     cursor.execute('SET NAMES utf8;')
     cursor.execute('SET CHARACTER SET utf8;')
     cursor.execute('SET character_set_connection=utf8;')
 
-    cursor.execute('SELECT name FROM Persons WHERE person_ID=%s', (person_id,))
-    origin_name = cursor.fetchone()[0]
-    cursor.execute('SELECT person_ID FROM Persons WHERE name=%s', (alter_name,))
-    result = cursor.fetchall()
+    # name
+    if 'name' in alter_info:
+        cursor.execute('UPDATE Persons SET name=%s WHERE person_ID=%s', (alter_info['name'], person_id))
 
-    if len(result) > 0:
-        # alter_name exists
-        alter_person_id = result[0][0]
-        cursor.execute('DELETE FROM Persons WHERE person_ID=%s', (person_id,))
-        cursor.execute('UPDATE Vectors SET person_ID=%s WHERE person_ID=%s', (alter_person_id,person_id))
-        cursor.execute('UPDATE Meets SET person_ID=%s WHERE person_ID=%s', (alter_person_id,person_id))
-        cursor.execute('UPDATE WeiboAccounts SET person_ID=%s WHERE person_ID=%s', (alter_person_id,person_id))
-        cursor.execute('UPDATE Relations SET person1_ID=%s WHERE person1_ID=%s', (alter_person_id,person_id))
-        cursor.execute('UPDATE Relations SET person2_ID=%s WHERE person2_ID=%s', (alter_person_id,person_id))
-    else:
-        # a new name
-        cursor.execute('UPDATE Persons SET name=%s WHERE person_ID=%s', (alter_name, person_id))
+    # weibo
+    # TODO
+
+
+    # cursor.execute('SELECT name FROM Persons WHERE person_ID=%s', (person_id,))
+    # person_name = cursor.fetchone()[0]
+    # cursor.execute('SELECT person_ID FROM Persons WHERE name=%s', (alter_name,))
+    # result = cursor.fetchall()
+
+    # if len(result) > 0:
+    #     # alter_name exists
+    #     alter_person_id = result[0][0]
+    #     cursor.execute('DELETE FROM Persons WHERE person_ID=%s', (person_id,))
+    #     cursor.execute('UPDATE Vectors SET person_ID=%s WHERE person_ID=%s', (alter_person_id,person_id))
+    #     cursor.execute('UPDATE Meets SET person_ID=%s WHERE person_ID=%s', (alter_person_id,person_id))
+    #     cursor.execute('UPDATE WeiboAccounts SET person_ID=%s WHERE person_ID=%s', (alter_person_id,person_id))
+    #     cursor.execute('UPDATE Relations SET person1_ID=%s WHERE person1_ID=%s', (alter_person_id,person_id))
+    #     cursor.execute('UPDATE Relations SET person2_ID=%s WHERE person2_ID=%s', (alter_person_id,person_id))
+    # else:
+    #     # a new name
+    #     cursor.execute('UPDATE Persons SET name=%s WHERE person_ID=%s', (alter_name, person_id))
 
     db_conn.commit()
     db_conn.close()

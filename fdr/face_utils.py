@@ -11,6 +11,7 @@ import urllib.request
 import json
 import pickle
 import MySQLdb
+import math
 from datetime import datetime
 
 
@@ -167,10 +168,88 @@ def get_geolocation():
 
 
 
-def recognize_face_from_file(db_login, file_path):
-    db_conn = MySQLdb.connect(db=db, user=user, passwd=passwd)
+def recognize_face_from_file(db_login, file_path, tolerance=0.4, verbose=False):
+
+    image = cv2.imread(file_path)
+    if image is None:
+        print('Error: image file not found')
+    rgb_image = image[:, :, ::-1]
+
+    if verbose:
+        print('recognizing from ' + file_path)
+
+    db_conn = MySQLdb.connect(db=db_login['db'], user=db_login['user'], passwd=db_login['passwd'])
     db_conn.set_character_set('utf8')
-    known_faces = face_utils.load_faces(db, user, passwd)
-    face_locations = []
-    face_encodings = []
-    face_names = []
+    known_faces = load_faces(db_login['db'], db_login['user'], db_login['passwd'])
+    face_locations = face_recognition.face_locations(rgb_image, number_of_times_to_upsample=1)
+    face_encodings = face_recognition.face_encodings(rgb_image, face_locations, num_jitters=1)
+    face_matches = []
+
+    for face_encoding, (top, right, bottom, left) in zip(face_encodings, face_locations):
+        # See if the face is a match for the known face(s)
+        distances = get_face_distances(known_faces, face_encoding)
+        match_id, match_dist = match_face(distances, tolerance)
+        match = (match_id, match_dist, top, right, bottom, left)
+        face_matches.append(match)
+
+    if verbose:
+        print(str(len(face_matches)) + 'faces detected')
+
+    for match in face_matches:
+
+        person_id, match_dist, top, right, bottom, left = match
+
+        if len(person_id) > 0: # known
+
+            cursor = db_conn.cursor()
+            cursor.execute('SET NAMES utf8;')
+            cursor.execute('SET CHARACTER SET utf8;')
+            cursor.execute('SET character_set_connection=utf8;')
+            if cursor.execute('SELECT name, last_meet_time FROM Persons WHERE person_ID=%s', (person_id,)) <= 0:
+                print('Error: no such person')
+                continue
+            name, last_meet_time = cursor.fetchone()
+
+            if verbose:
+                print('Known person ' + name)
+
+            # update database
+            current_time = datetime.now()
+            if (current_time - last_meet_time).seconds < MEET_INTERVAL:
+                continue
+            current_place = get_geolocation()
+            current_time = current_time.strftime('%Y-%m-%d-%H-%M-%S')
+            cursor.execute('UPDATE Persons SET last_meet_time=%s WHERE person_ID=%s',
+                            (current_time, person_id,))
+            cursor.execute('INSERT INTO Meets (meet_time, meet_place, person_ID) VALUES (%s,%s,%s)',
+                            (current_time, current_place, person_id,))
+            db_conn.commit()
+
+        else: # Unknown
+
+            if verbose:
+                print('Unknown person, storing')
+
+            cursor = db_conn.cursor()
+            temp_result = face_recognition.face_encodings(image, known_face_locations=[(top, right, bottom, left)])
+            if len(temp_result) == 0:
+                continue
+            cursor.execute('SELECT UUID()')
+            person_id = cursor.fetchone()[0]
+            name = 'Unknown'
+            current_time = datetime.strftime(datetime.now(), '%Y-%m-%d-%H-%M-%S')
+            cursor.execute('INSERT INTO Persons (person_ID, name, last_meet_time) VALUES (%s, %s, %s)', (person_id, name, current_time))
+            vector = pickle.dumps(temp_result[0])
+            cursor.execute('INSERT INTO Vectors (vector, person_ID) VALUES (%s,%s)', (vector, person_id))
+            current_place = get_geolocation()
+            cursor.execute('INSERT INTO Meets (meet_time, meet_place, person_ID) VALUES (%s,%s,%s)',
+                            (current_time, current_place, person_id,))
+
+            # point out the face in the picture
+            temp_image = image.copy()
+            cv2.circle(temp_image, (int((left + right)/2), int((top + bottom)/2)),
+                        int(math.sqrt(((right - left)**2 + (bottom - top)**2))/2),
+                        (255,0,0), thickness=7)
+
+            cv2.imwrite('./data/photo/' + person_id + '.jpg', temp_image)
+            db_conn.commit()

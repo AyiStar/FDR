@@ -1,13 +1,29 @@
 import sys, os
+import time
+from datetime import datetime
+import multiprocessing as mp
+import json
+import socket
+
 from PyQt5 import QtWidgets, QtGui, QtCore
 import qdarkstyle
 import MySQLdb
-from datetime import datetime
-import gui_utils
-import multiprocessing as mp
 import numpy as np
 import cv2
-import time
+
+import gui_utils
+
+
+'''
+    Global Variables used in network communication
+'''
+MSG_ACC = False
+RECV_DATA = ''
+
+'''
+    Global Variable used in UPDATE
+'''
+NEED_UPDATE = False
 
 
 
@@ -20,6 +36,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.image_queue = mp.Queue()
         self.result_queue = mp.Queue()
         self.update_queue = mp.Queue()
+
+        # socket
+        self.socket_server = SocketCommunication()
 
         # main widget
         self.main_widget = MainWidget(db_login, self.update_queue)
@@ -87,6 +106,10 @@ class MainWindow(QtWidgets.QMainWindow):
         searchAct = QtWidgets.QAction(QtGui.QIcon('./resources/icons/search.png'), '搜索', self)
         searchAct.setShortcut('Ctrl+F')
 
+        # network action
+        networkAct = QtWidgets.QAction(QtGui.QIcon('./resources/icons/network.png'), '联网', self)
+        networkAct.triggered.connect(self.on_network_action)
+
         # video action
         videoAct = QtWidgets.QAction(QtGui.QIcon('./resources/icons/video.png'), '视频', self)
         videoAct.triggered.connect(self.on_video_action)
@@ -98,6 +121,7 @@ class MainWindow(QtWidgets.QMainWindow):
         tool_bar = self.addToolBar('工具栏')
         tool_bar.addAction(start_stopAct)
         tool_bar.addAction(refreshAct)
+        tool_bar.addAction(networkAct)
         tool_bar.addAction(videoAct)
         tool_bar.addAction(searchAct)
         tool_bar.addAction(exitAct)
@@ -109,6 +133,18 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self.main_timer_widget.image_signal.disconnect(self.video_widget.image_slot)
             self.video_widget.hide()
+
+    def on_network_action(self):
+        ip, ip_ok = QtWidgets.QInputDialog.getText(self, '本机IP地址', '', text='192.168.1.101')
+        if not ip_ok:
+            return
+        port, port_ok = QtWidgets.QInputDialog.getInt(self, '设置开放端口号', '', value=2333)
+        if not port_ok:
+            return
+        self.socket_server.set_address(ip, port)
+        self.socket_server.open_socket()
+
+
 
     def on_start_stop_action(self):
         if not self.main_timer_widget.timer.isActive():
@@ -257,8 +293,10 @@ class PersonDisplayWidget(QtWidgets.QWidget):
         else:
             self.button.setIcon(QtGui.QIcon('./resources/icons/question.jpg'))
         self.button.setIconSize(QtCore.QSize(200, 150))
-        self.manage_widgets = PersonManageWidget(self.db_login, person_id)
-        self.button.clicked.connect(self.manage_widgets.show)
+
+        self.alter_widget = PersonAlterWidget()
+        self.check_widget = PersonCheckWidget(self.db_login, person_id)
+        self.button.clicked.connect(self.check_widget.show)
 
         # button tips
         btn_tips = ''.join(['总见面次数: ', str(self.meet_times), '\n',
@@ -276,6 +314,10 @@ class PersonDisplayWidget(QtWidgets.QWidget):
 
         # twinkle timer
         self.twinkle_timer = QtCore.QBasicTimer()
+        # communication timer
+        self.commu_timer = QtCore.QBasicTimer()
+        # alter info dict
+        self.alter_info = {}
 
         # label
         label = QtWidgets.QLabel(self.name)
@@ -283,9 +325,10 @@ class PersonDisplayWidget(QtWidgets.QWidget):
         # context menu
         self.context_menu = QtWidgets.QMenu(self)
         self.check_action = self.context_menu.addAction('&查看')
-        self.check_action.triggered.connect(self.manage_widgets.show)
         self.alter_action = self.context_menu.addAction('&修改')
         self.delete_action = self.context_menu.addAction('&删除')
+        self.check_action.triggered.connect(self.check_widget.show)
+        self.alter_action.triggered.connect(self.on_alter_action)
         self.delete_action.triggered.connect(self.on_delete_action)
 
         self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
@@ -307,12 +350,55 @@ class PersonDisplayWidget(QtWidgets.QWidget):
             self.effect.setEnabled(False)
 
     def timerEvent(self, event):
-        if (event.timerId() != self.twinkle_timer.timerId()):
-            return
-        if self.effect.isEnabled():
-            self.effect.setEnabled(False)
+        if (event.timerId() == self.twinkle_timer.timerId()):
+            if self.effect.isEnabled():
+                self.effect.setEnabled(False)
+            else:
+                self.effect.setEnabled(True)
+        elif (event.timerId() == self.commu_timer.timerId()):
+            global MSG_ACC
+            global RECV_DATA
+
+            if MSG_ACC:
+                print("检测到输入")
+                #这里用来处理接收到的JSON
+                self.alter_info = json.loads(RECV_DATA)
+                display_info = ['获取输入信息如下\n']
+                if 'name' in self.alter_info:
+                    print(self.alter_info['name'])
+                    display_info.extend(['姓名: ', self.alter_info['name'], '\n'])
+                if 'weibo' in self.alter_info:
+                    print(self.alter_info['weibo'])
+                    display_info.extend(['微博昵称: ', self.alter_info['weibo'], '\n'])
+                if 'relationship' in self.alter_info:
+                    #print(self.alter_info['relationship'])
+                    display_info.extend(['关系:\n'])
+                    for i, relation in self.alter_info['relationship']:
+                        print(relation['namea'])
+                        print(relation['nameb'])
+                        print(relation['rel'])
+                        display_info.extend([str(i), ': ', relation[namea], '是', relation['nameb'], '的', relation['rel'], '\n'])
+                display_info.append('是否确认修改?')
+                self.alter_widget.get_alter_info(''.join(display_info))
+                MSG_ACC = False
+
+
+    def on_alter_action(self):
+        global MSG_ACC
+
+        MSG_ACC = False
+        self.commu_timer.start(200, self)
+
+        self.alter_widget = PersonAlterWidget()
+        self.alter_widget.wait_for_info()
+        self.alter_widget.exec_()
+
+        if self.alter_widget.clickedButton() == self.alter_widget.button(QtWidgets.QMessageBox.No):
+            print('取消输入')
         else:
-            self.effect.setEnabled(True)
+            print('修改数据库')
+            gui_utils.alter_person(self.db_login, self.person_id, self.alter_info)
+        self.commu_timer.stop()
 
 
     def on_delete_action(self):
@@ -320,24 +406,14 @@ class PersonDisplayWidget(QtWidgets.QWidget):
         reply = QtWidgets.QMessageBox.question(self, 'Message', confirm_msg,
                                                 QtWidgets.QMessageBox.Yes, QtWidgets.QMessageBox.No)
         if reply == QtWidgets.QMessageBox.Yes:
-            db_conn = MySQLdb.connect(user=self.db_login['user'], passwd=self.db_login['passwd'], db=self.db_login['db'])
-            cursor = db_conn.cursor()
-            cursor.execute('DELETE FROM Persons WHERE person_ID=%s', (self.person_id,))
-            cursor.execute('DELETE FROM Meets   WHERE person_ID=%s', (self.person_id,))
-            cursor.execute('DELETE FROM Vectors WHERE person_ID=%s', (self.person_id,))
-            cursor.execute('DELETE FROM WeiboAccounts WHERE person_ID=%s', (self.person_id,))
-            cursor.execute('DELETE FROM Relations WHERE person1_ID=%s OR person2_ID=%s', (self.person_id, self.person_id))
-
-            # TODO delete weibos and photos as well
-            db_conn.commit()
-            db_conn.close()
+            gui_utils.delete_person(self.db_login, self.person_id)
             self.update_signal.emit()
         else:
             pass
 
 
 
-class PersonManageWidget(QtWidgets.QWidget):
+class PersonCheckWidget(QtWidgets.QWidget):
 
     def __init__(self, db_login, person_id):
         super().__init__()
@@ -524,6 +600,29 @@ class PersonManageWidget(QtWidgets.QWidget):
 
 
 
+class PersonAlterWidget(QtWidgets.QMessageBox):
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle('修改信息')
+
+
+    def wait_for_info(self):
+        self.setText('等待信息输入...')
+        self.setStandardButtons(QtWidgets.QMessageBox.No)
+        btn_no = self.button(QtWidgets.QMessageBox.No)
+        btn_no.setText('取消')
+
+    def get_alter_info(self, info):
+        self.setText(info)
+        self.setStandardButtons(QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+        btn_yes = self.button(QtWidgets.QMessageBox.Yes)
+        btn_yes.setText('确认')
+        btn_no = self.button(QtWidgets.QMessageBox.No)
+        btn_no.setText('取消')
+
+
+
 class MainTimerWidget(QtWidgets.QWidget):
 
     image_signal = QtCore.pyqtSignal(np.ndarray)
@@ -554,6 +653,8 @@ class MainTimerWidget(QtWidgets.QWidget):
         if (event.timerId() != self.timer.timerId()):
             return
 
+        global NEED_UPDATE
+
         read, image = self.camera.read()
         if read:
             self.image_signal.emit(image)
@@ -563,6 +664,10 @@ class MainTimerWidget(QtWidgets.QWidget):
         if not self.update_queue.empty():
             self.update_queue.get()
             self.update_signal.emit()
+
+        if NEED_UPDATE:
+            self.update_signal.emit()
+            NEED_UPDATE = False
 
         if not self.result_queue.empty():
             result = self.result_queue.get()
@@ -624,6 +729,60 @@ class FaceRecognition(QtCore.QObject):
         self.update_queue_in.put(0)
 
 
+
+class SocketCommunication(QtCore.QObject):
+
+    def __init__(self):
+        super().__init__()
+
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.addr = None
+        self.timer = QtCore.QBasicTimer()
+        self.clientAddrList = []
+
+    def __del__(self):
+        self.sock.close()
+
+    def set_address(self, ip, port):
+        self.addr = (ip, port)
+
+    def open_socket(self):
+        self.sock.bind(self.addr)
+        self.sock.listen(10)
+        self.sock.setblocking(False)
+        print('网络设置成功')
+        self.timer.start(200, self)
+
+    def timerEvent(self, event):
+
+        global MSG_ACC
+        global RECV_DATA
+        # global voiceFlag
+
+        if (event.timerId() != self.timer.timerId()):
+            return
+        try:
+            clientSocket, clientAddr = self.sock.accept()
+        except:
+            pass
+        else:
+            print("New Connection")
+            clientSocket.setblocking(False)
+            self.clientAddrList.append((clientSocket, clientAddr))
+        for clientSocket, clientAddr in self.clientAddrList:
+            try:
+                RECV_DATA = clientSocket.recv(1024).decode("utf-8")
+            except:
+                pass
+            else:
+                if len(RECV_DATA)>0:
+                    print(RECV_DATA)
+                    # if recvData=="voice":
+                    #     voiceFlag = True
+                    #     print("Voice Playing")
+                    #     voiceFlag = False
+                    #     return
+                    MSG_ACC = True
 
 
 
