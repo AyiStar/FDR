@@ -15,15 +15,17 @@ import gui_utils
 
 
 '''
-    Global Variables used in network communication
+    Global Variables
 '''
+# used in network communication
 MSG_ACC = False
 RECV_DATA = ''
 
-'''
-    Global Variable used in UPDATE
-'''
+# used in UPDATE
 NEED_UPDATE = False
+
+# used in status report
+STATUS_INFO = ''
 
 
 
@@ -41,7 +43,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.socket_server = SocketCommunication()
 
         # main widget
-        self.main_widget = MainWidget(db_login, self.update_queue)
+        self.main_widget = MainWidget(db_login)
         self.setCentralWidget(self.main_widget)
         self.setWindowTitle('社交小助手')
         self.setWindowIcon(QtGui.QIcon('./resources/icons/icon.jpg'))
@@ -55,6 +57,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.main_timer_widget.result_signal.connect(self.main_widget.result_slot)
 
         self.face_recognition.start_recognizing()
+        self.main_timer_widget.start_timing()
 
         self.center()
         self.init_menu_bar()
@@ -105,6 +108,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # search action
         searchAct = QtWidgets.QAction(QtGui.QIcon('./resources/icons/search.png'), '搜索', self)
         searchAct.setShortcut('Ctrl+F')
+        searchAct.triggered.connect(self.on_search_action)
 
         # network action
         networkAct = QtWidgets.QAction(QtGui.QIcon('./resources/icons/network.png'), '联网', self)
@@ -144,15 +148,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self.socket_server.set_address(ip, port)
         self.socket_server.open_socket()
 
-
-
     def on_start_stop_action(self):
-        if not self.main_timer_widget.timer.isActive():
-            self.main_timer_widget.start_timing()
+        self.main_timer_widget.isRecording = not self.main_timer_widget.isRecording
+
+    def on_search_action(self):
+        if not self.main_widget.get_search_mode():
+            self.main_widget.set_search_mode(True)
         else:
-            self.main_timer_widget.stop_timing()
+            self.main_widget.set_search_mode(False)
 
     def on_exit_action(self):
+        self.main_timer_widget.stop_timing()
         self.face_recognition.stop_recognizing()
         self.image_queue.close()
         self.update_queue.close()
@@ -164,15 +170,34 @@ class MainWindow(QtWidgets.QMainWindow):
 
 class MainWidget(QtWidgets.QWidget):
 
-    def __init__(self, db_login, update_queue):
+    def __init__(self, db_login):
         super().__init__()
-        self.update_queue = update_queue
 
-        self.layout = QtWidgets.QHBoxLayout()
+        self.layout = QtWidgets.QVBoxLayout()
+        self.search_line_edit = SearchLineEdit()
+        self.search_line_edit.textChanged.connect(self.search_slot)
         self.person_list_tab_widget = PersonListTabWidget(db_login)
-        self.person_list_tab_widget.update_signal.connect(lambda: self.update_queue.put(0))
+        self.layout.addWidget(self.search_line_edit)
         self.layout.addWidget(self.person_list_tab_widget)
+        self.search_line_edit.hide()
+        self.search_mode = False
         self.setLayout(self.layout)
+
+    def get_search_mode(self):
+        return self.search_mode
+
+    def set_search_mode(self, enable):
+        if enable:
+            self.search_mode = True
+            self.search_line_edit.show()
+        else:
+            self.search_mode = False
+            self.search_line_edit.clear()
+            self.search_line_edit.hide()
+
+    def search_slot(self):
+        search_text = self.search_line_edit.text()
+        self.person_list_tab_widget.refresh(search_filter=search_text)
 
     def update_slot(self):
         self.person_list_tab_widget.refresh()
@@ -183,9 +208,8 @@ class MainWidget(QtWidgets.QWidget):
 
 
 
-class PersonListTabWidget(QtWidgets.QWidget):
 
-    update_signal = QtCore.pyqtSignal()
+class PersonListTabWidget(QtWidgets.QWidget):
 
     def __init__(self, db_login):
         super().__init__()
@@ -193,17 +217,23 @@ class PersonListTabWidget(QtWidgets.QWidget):
         self.tabs = QtWidgets.QTabWidget()
         self.known_person_list_widget = PersonListWidget(db_login, known=True)
         self.unknown_person_list_widget = PersonListWidget(db_login, known=False)
-        self.tabs.addTab(self.known_person_list_widget, '认识的人')
-        self.tabs.addTab(self.unknown_person_list_widget, '陌生人')
+        self.known_person_list_scroll_area = QtWidgets.QScrollArea()
+        self.known_person_list_scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.known_person_list_scroll_area.setWidget(self.known_person_list_widget)
+        self.known_person_list_scroll_area.setMinimumWidth(self.known_person_list_widget.sizeHint().width())
+        self.unknown_person_list_scroll_area = QtWidgets.QScrollArea()
+        self.unknown_person_list_scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.unknown_person_list_scroll_area.setWidget(self.unknown_person_list_widget)
+        self.unknown_person_list_scroll_area.setMinimumWidth(self.unknown_person_list_widget.sizeHint().width())
+        self.tabs.addTab(self.known_person_list_scroll_area, '认识的人')
+        self.tabs.addTab(self.unknown_person_list_scroll_area, '陌生人')
         self.layout.addWidget(self.tabs)
         self.setLayout(self.layout)
-        self.known_person_list_widget.update_signal.connect(self.update_signal.emit)
-        self.unknown_person_list_widget.update_signal.connect(self.update_signal.emit)
 
 
-    def refresh(self):
-        self.known_person_list_widget.refresh()
-        self.unknown_person_list_widget.refresh()
+    def refresh(self, search_filter=''):
+        self.known_person_list_widget.refresh(search_filter=search_filter)
+        self.unknown_person_list_widget.refresh(search_filter=search_filter)
 
     def twinkle(self, person_id_list):
         self.known_person_list_widget.twinkle(person_id_list)
@@ -212,8 +242,6 @@ class PersonListTabWidget(QtWidgets.QWidget):
 
 
 class PersonListWidget(QtWidgets.QWidget):
-
-    update_signal = QtCore.pyqtSignal()
 
     def __init__(self, db_login, known):
         super().__init__()
@@ -226,11 +254,16 @@ class PersonListWidget(QtWidgets.QWidget):
         self.refresh()
         self.setLayout(self.layout)
 
-    def refresh(self):
+    def refresh(self, search_filter=''):
         db_conn = MySQLdb.connect(user=self.db_login['user'], passwd=self.db_login['passwd'], db=self.db_login['db'])
+        db_conn.set_character_set('utf8')
         cursor = db_conn.cursor()
+        cursor.execute('SET NAMES utf8;')
+        cursor.execute('SET CHARACTER SET utf8;')
+        cursor.execute('SET character_set_connection=utf8;')
         if self.known:
-            cursor.execute('SELECT person_ID FROM Persons WHERE name!=%s ORDER BY last_meet_time DESC', ('Unknown',))
+            pattern = search_filter.replace('', '%')
+            cursor.execute('SELECT person_ID FROM Persons WHERE name!=%s AND name LIKE %s ORDER BY last_meet_time DESC', ('Unknown', pattern))
         else:
             cursor.execute('SELECT person_ID FROM Persons WHERE name=%s ORDER BY last_meet_time DESC', ('Unknown',))
         person_ids = [x[0] for x in cursor.fetchall()]
@@ -242,7 +275,6 @@ class PersonListWidget(QtWidgets.QWidget):
 
         for i, person_id in enumerate(person_ids):
             self.person_display_widgets[person_id] = PersonDisplayWidget(self.db_login, person_id)
-            self.person_display_widgets[person_id].update_signal.connect(self.update_signal.emit)
             self.layout.addWidget(self.person_display_widgets[person_id], i//3, i%3)
 
         db_conn.close()
@@ -262,13 +294,11 @@ class PersonListWidget(QtWidgets.QWidget):
 
 class PersonDisplayWidget(QtWidgets.QWidget):
 
-    update_signal = QtCore.pyqtSignal()
-
     def __init__(self, db_login, person_id):
         super().__init__()
         self.db_login = db_login
         self.person_id = person_id
-        self.setFixedWidth(300)
+        self.setFixedWidth(240)
 
         db_conn = MySQLdb.connect(user=db_login['user'], passwd=db_login['passwd'], db=db_login['db'])
         db_conn.set_character_set('utf8')
@@ -385,6 +415,7 @@ class PersonDisplayWidget(QtWidgets.QWidget):
 
     def on_alter_action(self):
         global MSG_ACC
+        global NEED_UPDATE
 
         MSG_ACC = False
         self.commu_timer.start(200, self)
@@ -398,16 +429,18 @@ class PersonDisplayWidget(QtWidgets.QWidget):
         else:
             print('修改数据库')
             gui_utils.alter_person(self.db_login, self.person_id, self.alter_info)
+            NEED_UPDATE = True
         self.commu_timer.stop()
 
 
     def on_delete_action(self):
+        global NEED_UPDATE
         confirm_msg = ''.join(['确认要删除', self.name, '吗?'])
         reply = QtWidgets.QMessageBox.question(self, 'Message', confirm_msg,
                                                 QtWidgets.QMessageBox.Yes, QtWidgets.QMessageBox.No)
         if reply == QtWidgets.QMessageBox.Yes:
             gui_utils.delete_person(self.db_login, self.person_id)
-            self.update_signal.emit()
+            NEED_UPDATE = True
         else:
             pass
 
@@ -636,18 +669,13 @@ class MainTimerWidget(QtWidgets.QWidget):
         self.image_queue = image_queue
         self.update_queue = update_queue
         self.result_queue = result_queue
+        self.isRecording = False
 
     def start_timing(self):
         self.timer.start(0, self)
 
     def stop_timing(self):
         self.timer.stop()
-        while not self.image_queue.empty():
-            self.image_queue.get()
-        while not self.update_queue.empty():
-            self.update_queue.get()
-        while not self.result_queue.empty():
-            self.result_queue.get()
 
     def timerEvent(self, event):
         if (event.timerId() != self.timer.timerId()):
@@ -655,11 +683,12 @@ class MainTimerWidget(QtWidgets.QWidget):
 
         global NEED_UPDATE
 
-        read, image = self.camera.read()
-        if read:
-            self.image_signal.emit(image)
-            if self.image_queue.empty():
-                self.image_queue.put(image)
+        if self.isRecording:
+            read, image = self.camera.read()
+            if read:
+                self.image_signal.emit(image)
+                if self.image_queue.empty():
+                    self.image_queue.put(image)
 
         if not self.update_queue.empty():
             self.update_queue.get()
@@ -783,6 +812,14 @@ class SocketCommunication(QtCore.QObject):
                     #     voiceFlag = False
                     #     return
                     MSG_ACC = True
+
+
+
+class SearchLineEdit(QtWidgets.QLineEdit):
+
+    def __init__(self):
+        super().__init__()
+
 
 
 

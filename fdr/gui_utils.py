@@ -74,7 +74,7 @@ def recognize_face_process(q_image, q_result, q_change, q_change_in, db, user, p
                 cursor.execute('SET CHARACTER SET utf8;')
                 cursor.execute('SET character_set_connection=utf8;')
                 if cursor.execute('SELECT name, last_meet_time FROM Persons WHERE person_ID=%s', (person_id,)) <= 0:
-                    print('Error: no such person')
+                    # print('Error: no such person')
                     continue
                 name, last_meet_time = cursor.fetchone()
 
