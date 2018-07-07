@@ -2,6 +2,7 @@ import sys, os
 import time
 from datetime import datetime
 import multiprocessing as mp
+import threading
 import json
 import socket
 
@@ -12,6 +13,7 @@ import numpy as np
 import cv2
 
 import gui_utils
+import audio_utils
 
 
 '''
@@ -20,6 +22,7 @@ import gui_utils
 # used in network communication
 MSG_ACC = False
 RECV_DATA = ''
+VOICE_SIG = False
 
 # used in UPDATE
 NEED_UPDATE = False
@@ -40,7 +43,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.update_queue = mp.Queue()
 
         # socket
-        self.socket_server = SocketCommunication()
+        self.socket_server = SocketServer()
 
         # main widget
         self.main_widget = MainWidget(db_login)
@@ -51,10 +54,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.main_timer_widget = MainTimerWidget(video, self.image_queue, self.update_queue, self.result_queue)
         self.video_widget = VideoWidget()
         self.face_recognition = FaceRecognition(self.image_queue, self.result_queue, self.update_queue, db_login)
+        self.audio_module = AudioModule(db_login)
 
         self.main_timer_widget.update_signal.connect(self.main_widget.update_slot)
         self.main_timer_widget.update_signal.connect(self.face_recognition.update_slot)
         self.main_timer_widget.result_signal.connect(self.main_widget.result_slot)
+        self.main_timer_widget.result_signal.connect(self.audio_module.result_slot)
+        self.main_timer_widget.voice_signal.connect(self.audio_module.voice_slot)
 
         self.face_recognition.start_recognizing()
         self.main_timer_widget.start_timing()
@@ -174,7 +180,7 @@ class MainWidget(QtWidgets.QWidget):
         super().__init__()
 
         self.layout = QtWidgets.QVBoxLayout()
-        self.search_line_edit = SearchLineEdit()
+        self.search_line_edit = QtWidgets.QLineEdit()
         self.search_line_edit.textChanged.connect(self.search_slot)
         self.person_list_tab_widget = PersonListTabWidget(db_login)
         self.layout.addWidget(self.search_line_edit)
@@ -205,7 +211,6 @@ class MainWidget(QtWidgets.QWidget):
     def result_slot(self, result):
         person_id_list = [r[0] for r in result[0]]
         self.person_list_tab_widget.twinkle(person_id_list)
-
 
 
 
@@ -661,6 +666,7 @@ class MainTimerWidget(QtWidgets.QWidget):
     image_signal = QtCore.pyqtSignal(np.ndarray)
     result_signal = QtCore.pyqtSignal(object)
     update_signal = QtCore.pyqtSignal()
+    voice_signal = QtCore.pyqtSignal()
 
     def __init__(self, video, image_queue, update_queue, result_queue):
         super().__init__()
@@ -681,8 +687,6 @@ class MainTimerWidget(QtWidgets.QWidget):
         if (event.timerId() != self.timer.timerId()):
             return
 
-        global NEED_UPDATE
-
         if self.isRecording:
             read, image = self.camera.read()
             if read:
@@ -694,6 +698,7 @@ class MainTimerWidget(QtWidgets.QWidget):
             self.update_queue.get()
             self.update_signal.emit()
 
+        global NEED_UPDATE
         if NEED_UPDATE:
             self.update_signal.emit()
             NEED_UPDATE = False
@@ -701,6 +706,11 @@ class MainTimerWidget(QtWidgets.QWidget):
         if not self.result_queue.empty():
             result = self.result_queue.get()
             self.result_signal.emit(result)
+
+        global VOICE_SIG
+        if VOICE_SIG:
+            self.voice_signal.emit()
+            VOICE_SIG = False
 
 
 
@@ -759,7 +769,7 @@ class FaceRecognition(QtCore.QObject):
 
 
 
-class SocketCommunication(QtCore.QObject):
+class SocketServer(QtCore.QObject):
 
     def __init__(self):
         super().__init__()
@@ -786,7 +796,7 @@ class SocketCommunication(QtCore.QObject):
 
         global MSG_ACC
         global RECV_DATA
-        # global voiceFlag
+        global VOICE_SIG
 
         if (event.timerId() != self.timer.timerId()):
             return
@@ -806,20 +816,45 @@ class SocketCommunication(QtCore.QObject):
             else:
                 if len(RECV_DATA)>0:
                     print(RECV_DATA)
-                    # if recvData=="voice":
-                    #     voiceFlag = True
-                    #     print("Voice Playing")
-                    #     voiceFlag = False
-                    #     return
+                    if RECV_DATA == 'voice':
+                        VOICE_SIG = True
+                        print('语音播放')
+                        return
                     MSG_ACC = True
 
 
 
-class SearchLineEdit(QtWidgets.QLineEdit):
+class AudioModule(QtCore.QObject):
 
-    def __init__(self):
+    def __init__(self, db_login):
         super().__init__()
+        self.db_login = db_login
+        self.speech_robot = audio_utils.SpeechRobot()
+        self.result = None
 
+    def result_slot(self, result):
+        self.result = result
+
+    def voice_slot(self):
+        db_conn = MySQLdb.connect(user=self.db_login['user'], passwd=self.db_login['passwd'], db=self.db_login['db'])
+        db_conn.set_character_set('utf8')
+        cursor = db_conn.cursor()
+        cursor.execute('SET NAMES utf8;')
+        cursor.execute('SET CHARACTER SET utf8;')
+        cursor.execute('SET character_set_connection=utf8;')
+        person_id_list = [r[0] for r in self.result[0]]
+        speech_content = []
+
+        speech_content.append('一共识别到' + str(len(person_id_list)) + '人')
+        for i, person_id in enumerate(person_id_list):
+            speech_content.append('第' + str(i+1) + '位')
+            cursor.execute('SELECT name FROM Persons WHERE person_ID=%s', (person_id,))
+            name = cursor.fetchone()[0]
+            speech_content.append(name if name != 'Unknown' else '陌生人')
+
+        print(','.join(speech_content))
+        speech_thread = threading.Thread(target=self.speech_robot.say, args=(','.join(speech_content),))
+        speech_thread.start()
 
 
 
