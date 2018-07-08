@@ -328,10 +328,12 @@ class PersonDisplayWidget(QtWidgets.QWidget):
         else:
             self.button.setIcon(QtGui.QIcon('./resources/icons/question.jpg'))
         self.button.setIconSize(QtCore.QSize(200, 150))
+        self.button.clicked.connect(self.on_check_action)
 
-        self.alter_widget = PersonAlterWidget()
-        self.check_widget = PersonCheckWidget(self.db_login, person_id)
-        self.button.clicked.connect(self.check_widget.show)
+
+        self.check_widget = None
+        self.alter_widget = None
+        self.amend_widget = None
 
         # button tips
         btn_tips = ''.join(['总见面次数: ', str(self.meet_times), '\n',
@@ -362,9 +364,11 @@ class PersonDisplayWidget(QtWidgets.QWidget):
         self.check_action = self.context_menu.addAction('&查看')
         self.alter_action = self.context_menu.addAction('&修改')
         self.delete_action = self.context_menu.addAction('&删除')
-        self.check_action.triggered.connect(self.check_widget.show)
+        self.amend_action = self.context_menu.addAction('&修正')
+        self.check_action.triggered.connect(self.on_check_action)
         self.alter_action.triggered.connect(self.on_alter_action)
         self.delete_action.triggered.connect(self.on_delete_action)
+        self.amend_action.triggered.connect(self.on_amend_action)
 
         self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(lambda: self.context_menu.exec_(QtGui.QCursor.pos()))
@@ -417,6 +421,9 @@ class PersonDisplayWidget(QtWidgets.QWidget):
                 self.alter_widget.get_alter_info(''.join(display_info))
                 MSG_ACC = False
 
+    def on_check_action(self):
+        self.check_widget = PersonCheckWidget(self.db_login, self.person_id)
+        self.check_widget.show()
 
     def on_alter_action(self):
         global MSG_ACC
@@ -437,7 +444,6 @@ class PersonDisplayWidget(QtWidgets.QWidget):
             NEED_UPDATE = True
         self.commu_timer.stop()
 
-
     def on_delete_action(self):
         global NEED_UPDATE
         confirm_msg = ''.join(['确认要删除', self.name, '吗?'])
@@ -445,9 +451,15 @@ class PersonDisplayWidget(QtWidgets.QWidget):
                                                 QtWidgets.QMessageBox.Yes, QtWidgets.QMessageBox.No)
         if reply == QtWidgets.QMessageBox.Yes:
             gui_utils.delete_person(self.db_login, self.person_id)
+            print('已删除')
             NEED_UPDATE = True
         else:
+            print('取消删除')
             pass
+
+    def on_amend_action(self):
+        self.amend_widget = PersonAmendWidget(self.db_login, self.person_id)
+        self.amend_widget.show()
 
 
 
@@ -455,7 +467,7 @@ class PersonCheckWidget(QtWidgets.QWidget):
 
     def __init__(self, db_login, person_id):
         super().__init__()
-        self.setWindowTitle('人物信息')
+        self.setWindowTitle('信息查看')
         self.layout = QtWidgets.QVBoxLayout()
         self.tabs = QtWidgets.QTabWidget()
         self.base_info_widget = self.BaseInfoWidget(db_login, person_id)
@@ -642,7 +654,7 @@ class PersonAlterWidget(QtWidgets.QMessageBox):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle('修改信息')
+        self.setWindowTitle('信息修改')
 
 
     def wait_for_info(self):
@@ -658,6 +670,53 @@ class PersonAlterWidget(QtWidgets.QMessageBox):
         btn_yes.setText('确认')
         btn_no = self.button(QtWidgets.QMessageBox.No)
         btn_no.setText('取消')
+
+
+
+class PersonAmendWidget(QtWidgets.QWidget):
+
+    def __init__(self, db_login, person_id):
+        super().__init__()
+        self.setWindowTitle('信息修正')
+        self.db_login = db_login
+        self.person_id = person_id
+        self.tip_label = QtWidgets.QLabel('请选择要修正的人,或点击下方按钮取消')
+        self.cancel_button = QtWidgets.QPushButton('取消')
+        self.cancel_button.clicked.connect(self.close)
+        self.list_layout = QtWidgets.QGridLayout()
+        self.list_layout.setAlignment(QtCore.Qt.AlignTop)
+        self.person_amend_display_widgets = {}
+
+        # refresh
+        db_conn = MySQLdb.connect(user=self.db_login['user'], passwd=self.db_login['passwd'], db=self.db_login['db'])
+        db_conn.set_character_set('utf8')
+        cursor = db_conn.cursor()
+        cursor.execute('SET NAMES utf8;')
+        cursor.execute('SET CHARACTER SET utf8;')
+        cursor.execute('SET character_set_connection=utf8;')
+        cursor.execute('SELECT person_ID FROM Persons WHERE name!=%s ORDER BY last_meet_time DESC', ('Unknown', ))
+        person_ids = [x[0] for x in cursor.fetchall()]
+
+        for i, person_id in enumerate(person_ids):
+            self.person_amend_display_widgets[person_id] = self.PersonAmendDisplayWidget(self.db_login, person_id)
+            self.list_layout.addWidget(self.person_amend_display_widgets[person_id], i//3, i%3)
+
+        db_conn.close()
+
+        # set layout
+        self.layout = QtWidgets.QVBoxLayout()
+        self.layout.addWidget(self.tip_label)
+        self.layout.addLayout(self.list_layout)
+        self.layout.addWidget(self.cancel_button)
+        self.setLayout(self.layout)
+
+    class PersonAmendDisplayWidget(PersonDisplayWidget):
+        def __init__(self, db_login, person_id):
+            super().__init__(db_login, person_id)
+            self.context_menu.setEnabled(False)
+
+        def on_check_action(self):
+            print('haha')
 
 
 
