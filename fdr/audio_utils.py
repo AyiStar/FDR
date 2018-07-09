@@ -11,7 +11,7 @@ class SpeechRobot():
         self._SECRET_KEY = '07DS72Ar5OEMXkYRMxhwyrB8U23C8sMG'
         self.client = AipSpeech(self._APP_ID, self._API_KEY, self._SECRET_KEY)
 
-    def say(self, content):
-        result  = self.client.synthesis(content, 'zh', 1, {'vol': 5, 'per':1, 'spd':5, 'pitch':5})
+    def say(self, content, speed=5, volume=5, person=0, pitch=5):
+        result  = self.client.synthesis(content, 'zh', 1, {'vol': volume, 'per': person, 'spd': speed, 'pit': pitch})
         sound = AudioSegment.from_mp3(BytesIO(result))
         play(sound)

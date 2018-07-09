@@ -30,12 +30,16 @@ NEED_UPDATE = False
 # used in status report
 STATUS_INFO = ''
 
+# used in weibo crawling
+WEIBO_CRAWL_SIG = ''
+
 
 
 class MainWindow(QtWidgets.QMainWindow):
 
     def __init__(self, db_login, video):
         super().__init__()
+        self.db_login = db_login
 
         # queues for IPC
         self.image_queue = mp.Queue()
@@ -45,29 +49,47 @@ class MainWindow(QtWidgets.QMainWindow):
         # socket
         self.socket_server = SocketServer()
 
+        # timer
+        self.status_timer = QtCore.QBasicTimer()
+        self.status_timer.start(250, self)
+
+        # status bar
+        self.status_bar = QtWidgets.QStatusBar()
+        self.setStatusBar(self.status_bar)
+
         # main widget
-        self.main_widget = MainWidget(db_login)
+        self.main_widget = MainWidget(self.db_login)
         self.setCentralWidget(self.main_widget)
         self.setWindowTitle('社交小助手')
         self.setWindowIcon(QtGui.QIcon('./resources/icons/icon.jpg'))
 
         self.main_timer_widget = MainTimerWidget(video, self.image_queue, self.update_queue, self.result_queue)
         self.video_widget = VideoWidget()
-        self.face_recognition = FaceRecognition(self.image_queue, self.result_queue, self.update_queue, db_login)
-        self.audio_module = AudioModule(db_login)
+        self.face_recognition = FaceRecognition(self.image_queue, self.result_queue, self.update_queue, self.db_login)
+        self.audio_module = AudioModule(self.db_login)
+        self.weibo_crawl = WeiboCrawl(self.db_login)
+        # self.voice_wake = VoiceWake()
 
         self.main_timer_widget.update_signal.connect(self.main_widget.update_slot)
         self.main_timer_widget.update_signal.connect(self.face_recognition.update_slot)
         self.main_timer_widget.result_signal.connect(self.main_widget.result_slot)
         self.main_timer_widget.result_signal.connect(self.audio_module.result_slot)
+        self.main_timer_widget.result_signal.connect(self.result_slot)
         self.main_timer_widget.voice_signal.connect(self.audio_module.voice_slot)
+        self.main_timer_widget.weibo_crawl_signal.connect(self.weibo_crawl.weibo_crawl_slot)
+        # self.voice_wake.hot_word_signal.connect(self.audio_module.hot_word_slot)
 
         self.face_recognition.start_recognizing()
         self.main_timer_widget.start_timing()
+        # self.voice_wake.start_voice_wake()
 
         self.center()
         self.init_menu_bar()
         self.init_tool_bar()
+        self.init_directory()
+
+        global STATUS_INFO
+        STATUS_INFO = '准备就绪'
 
     def center(self):
         # set center of screen
@@ -79,26 +101,31 @@ class MainWindow(QtWidgets.QMainWindow):
         self.move(frameGm.topLeft())
 
     def init_menu_bar(self):
-        menu_bar = self.menuBar()
-        menu_bar.setNativeMenuBar(False)
+        self.menu_bar = self.menuBar()
+        self.menu_bar.setNativeMenuBar(False)
 
-        sort_menu = menu_bar.addMenu('&排序方式')
-        sort_by_recent_meet_action = QtWidgets.QAction('按见面时间排序', self, checkable=True)
-        sort_by_meet_times_action = QtWidgets.QAction('按见面次数排序', self, checkable=True)
-        sort_by_recent_meet_action.setChecked(True)
-        sort_menu.addAction(sort_by_recent_meet_action)
-        sort_menu.addAction(sort_by_meet_times_action)
+        self.sort_menu = self.menu_bar.addMenu('&排序方式')
+        self.sort_by_recent_meet_action = QtWidgets.QAction('按见面时间排序', self, checkable=True)
+        self.sort_by_meet_times_action = QtWidgets.QAction('按见面次数排序', self, checkable=True)
+        self.sort_by_name_action = QtWidgets.QAction('按姓名排序', self, checkable=True)
+        self.sort_by_name_action.triggered.connect(self.on_sort_by_name_action)
+        self.sort_by_meet_times_action.triggered.connect(self.on_sort_by_meet_times_action)
+        self.sort_by_recent_meet_action.triggered.connect(self.on_sort_by_recent_meet_action)
+        self.sort_by_recent_meet_action.setChecked(True)
+        self.sort_menu.addAction(self.sort_by_recent_meet_action)
+        self.sort_menu.addAction(self.sort_by_meet_times_action)
+        self.sort_menu.addAction(self.sort_by_name_action)
 
-        check_menu = menu_bar.addMenu('&查看方式')
-        check_in_image_action = QtWidgets.QAction('图标查看', self, checkable=True)
-        check_in_list_action = QtWidgets.QAction('列表查看', self, checkable=True)
-        check_in_image_action.setChecked(True)
-        check_menu.addAction(check_in_image_action)
-        check_menu.addAction(check_in_list_action)
+        self.check_menu = self.menu_bar.addMenu('&查看方式')
+        self.check_in_image_action = QtWidgets.QAction('图标查看', self, checkable=True)
+        self.check_in_list_action = QtWidgets.QAction('列表查看', self, checkable=True)
+        self.check_in_image_action.setChecked(True)
+        self.check_menu.addAction(self.check_in_image_action)
+        self.check_menu.addAction(self.check_in_list_action)
 
-        help_menu = menu_bar.addMenu('&帮助')
-        about_action = QtWidgets.QAction('关于', self)
-        help_menu.addAction(about_action)
+        self.help_menu = self.menu_bar.addMenu('&帮助')
+        self.about_action = QtWidgets.QAction('关于', self)
+        self.help_menu.addAction(self.about_action)
 
     def init_tool_bar(self):
         # exit action
@@ -109,7 +136,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # refresh action
         refreshAct = QtWidgets.QAction(QtGui.QIcon('./resources/icons/refresh.png'), '刷新', self)
         refreshAct.setShortcut('Ctrl+R')
-        # refreshAct.triggered.connect(self.main_widget.refresh)
+        refreshAct.triggered.connect(self.on_refresh_action)
 
         # search action
         searchAct = QtWidgets.QAction(QtGui.QIcon('./resources/icons/search.png'), '搜索', self)
@@ -136,6 +163,18 @@ class MainWindow(QtWidgets.QMainWindow):
         tool_bar.addAction(searchAct)
         tool_bar.addAction(exitAct)
 
+    def init_directory(self):
+        if not os.path.exists('./data'):
+            os.mkdir('./data')
+            os.mkdir('./data/photo')
+            os.mkdir('./data/network')
+            os.mkdir('./data/wordcloud')
+
+    def timerEvent(self, event):
+        global STATUS_INFO
+        if (event.timerId() == self.status_timer.timerId()):
+            self.status_bar.showMessage(str(STATUS_INFO))
+
     def on_video_action(self):
         if not self.video_widget.isVisible():
             self.main_timer_widget.image_signal.connect(self.video_widget.image_slot)
@@ -145,6 +184,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.video_widget.hide()
 
     def on_network_action(self):
+        global STATUS_INFO
+        STATUS_INFO = '正在设置网络'
         ip, ip_ok = QtWidgets.QInputDialog.getText(self, '本机IP地址', '', text='192.168.1.101')
         if not ip_ok:
             return
@@ -153,6 +194,12 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self.socket_server.set_address(ip, port)
         self.socket_server.open_socket()
+
+    def on_refresh_action(self):
+        global NEED_UPDATE
+        global STATUS_INFO
+        NEED_UPDATE = True
+        STATUS_INFO = '已刷新'
 
     def on_start_stop_action(self):
         self.main_timer_widget.isRecording = not self.main_timer_widget.isRecording
@@ -164,13 +211,47 @@ class MainWindow(QtWidgets.QMainWindow):
             self.main_widget.set_search_mode(False)
 
     def on_exit_action(self):
+        global STATUS_INFO
+        STATUS_INFO = '正在退出'
         self.main_timer_widget.stop_timing()
         self.face_recognition.stop_recognizing()
+        #self.voice_wake.stop_voice_wake()
         self.image_queue.close()
         self.update_queue.close()
         self.result_queue.close()
         time.sleep(0.5)
         QtWidgets.qApp.quit()
+
+    def on_sort_by_name_action(self):
+        self.sort_by_name_action.setChecked(True)
+        self.sort_by_meet_times_action.setChecked(False)
+        self.sort_by_recent_meet_action.setChecked(False)
+
+    def on_sort_by_meet_times_action(self):
+        self.sort_by_name_action.setChecked(False)
+        self.sort_by_meet_times_action.setChecked(True)
+        self.sort_by_recent_meet_action.setChecked(False)
+
+    def on_sort_by_recent_meet_action(self):
+        self.sort_by_name_action.setChecked(False)
+        self.sort_by_meet_times_action.setChecked(False)
+        self.sort_by_recent_meet_action.setChecked(True)
+
+    def result_slot(self, result):
+        global STATUS_INFO
+        person_id_list = [r[0] for r in result if r[0]]
+        person_name_list = []
+        db_conn = MySQLdb.connect(user=self.db_login['user'], passwd=self.db_login['passwd'], db=self.db_login['db'])
+        db_conn.set_character_set('utf8')
+        cursor = db_conn.cursor()
+        cursor.execute('SET NAMES utf8;')
+        cursor.execute('SET CHARACTER SET utf8;')
+        cursor.execute('SET character_set_connection=utf8;')
+        for person_id in person_id_list:
+            if cursor.execute('SELECT name FROM Persons WHERE person_ID=%s', (person_id,)) > 0:
+                person_name = cursor.fetchone()[0]
+                person_name_list.append(person_name if person_name != 'Unknown' else '陌生人')
+        STATUS_INFO = '从左至右识别到: ' + ','.join(person_name_list)
 
 
 
@@ -209,7 +290,7 @@ class MainWidget(QtWidgets.QWidget):
         self.person_list_tab_widget.refresh()
 
     def result_slot(self, result):
-        person_id_list = [r[0] for r in result[0]]
+        person_id_list = [r[0] for r in result]
         self.person_list_tab_widget.twinkle(person_id_list)
 
 
@@ -373,6 +454,7 @@ class PersonDisplayWidget(QtWidgets.QWidget):
         self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(lambda: self.context_menu.exec_(QtGui.QCursor.pos()))
 
+        # set layout
         self.layout = QtWidgets.QVBoxLayout()
         self.layout.setAlignment(QtCore.Qt.AlignCenter)
         self.layout.addWidget(self.button)
@@ -397,26 +479,26 @@ class PersonDisplayWidget(QtWidgets.QWidget):
         elif (event.timerId() == self.commu_timer.timerId()):
             global MSG_ACC
             global RECV_DATA
+            global STATUS_INFO
 
             if MSG_ACC:
-                print("检测到输入")
-                #这里用来处理接收到的JSON
+                STATUS_INFO = '成功获取输入'
+                # process json
                 self.alter_info = json.loads(RECV_DATA)
                 display_info = ['获取输入信息如下\n']
                 if 'name' in self.alter_info:
-                    print(self.alter_info['name'])
                     display_info.extend(['姓名: ', self.alter_info['name'], '\n'])
                 if 'weibo' in self.alter_info:
-                    print(self.alter_info['weibo'])
                     display_info.extend(['微博昵称: ', self.alter_info['weibo'], '\n'])
                 if 'relationship' in self.alter_info:
-                    #print(self.alter_info['relationship'])
                     display_info.extend(['关系:\n'])
                     for i, relation in self.alter_info['relationship']:
-                        print(relation['namea'])
-                        print(relation['nameb'])
-                        print(relation['rel'])
-                        display_info.extend([str(i), ': ', relation[namea], '是', relation['nameb'], '的', relation['rel'], '\n'])
+                        if not relation['namea']:
+                            display_info.extend([str(i), ': ', 'TA是', relation['nameb'], '的', relation['rel'], '\n'])
+                        elif not relation['nameb']:
+                            display_info.extend([str(i), ': ', relation['namea'], '是TA的', relation['rel'], '\n'])
+                        else:
+                            display_info.extend([str(i), ': 输入错误\n'])
                 display_info.append('是否确认修改?')
                 self.alter_widget.get_alter_info(''.join(display_info))
                 MSG_ACC = False
@@ -428,6 +510,7 @@ class PersonDisplayWidget(QtWidgets.QWidget):
     def on_alter_action(self):
         global MSG_ACC
         global NEED_UPDATE
+        global STATUS_INFO
 
         MSG_ACC = False
         self.commu_timer.start(200, self)
@@ -437,25 +520,30 @@ class PersonDisplayWidget(QtWidgets.QWidget):
         self.alter_widget.exec_()
 
         if self.alter_widget.clickedButton() == self.alter_widget.button(QtWidgets.QMessageBox.No):
-            print('取消输入')
+            STATUS_INFO = '取消信息修改'
         else:
-            print('修改数据库')
-            gui_utils.alter_person(self.db_login, self.person_id, self.alter_info)
+            alter_result = gui_utils.alter_person(self.db_login, self.person_id, self.alter_info)
+            if alter_result:
+                STATUS_INFO = '信息修改失败: ' + alter_result
+            else:
+                STATUS_INFO = '信息修改成功'
             NEED_UPDATE = True
         self.commu_timer.stop()
 
     def on_delete_action(self):
         global NEED_UPDATE
+        global STATUS_INFO
         confirm_msg = ''.join(['确认要删除', self.name, '吗?'])
         reply = QtWidgets.QMessageBox.question(self, 'Message', confirm_msg,
                                                 QtWidgets.QMessageBox.Yes, QtWidgets.QMessageBox.No)
         if reply == QtWidgets.QMessageBox.Yes:
+
             gui_utils.delete_person(self.db_login, self.person_id)
-            print('已删除')
+            STATUS_INFO = '删除成功'
             NEED_UPDATE = True
         else:
-            print('取消删除')
-            pass
+            STATUS_INFO = '取消删除'
+
 
     def on_amend_action(self):
         self.amend_widget = PersonAmendWidget(self.db_login, self.person_id)
@@ -544,30 +632,39 @@ class PersonCheckWidget(QtWidgets.QWidget):
 
         def __init__(self, db_login, person_id):
             super().__init__()
+            global WEIBO_CRAWL_SIG
             self.db_login = db_login
             db_conn = MySQLdb.connect(user=self.db_login['user'], passwd=self.db_login['passwd'], db=self.db_login['db'])
             db_conn.set_character_set('utf8')
             cursor = db_conn.cursor()
             weibo_name = 'None'
-            weibo_uid = 'None'
+            self.weibo_uid = 'None'
             if cursor.execute('SELECT weibo_name, weibo_uid FROM WeiboAccounts WHERE person_ID=%s', (person_id,)) > 0:
-                weibo_name, weibo_uid = cursor.fetchone()
-            cursor.execute('SELECT post_time, tweet, forwarding FROM Weibos WHERE user_ID=%s', (weibo_uid,))
+                weibo_name, self.weibo_uid = cursor.fetchone()
+            cursor.execute('SELECT post_time, tweet, forwarding FROM Weibos WHERE user_ID=%s', (self.weibo_uid,))
             tweets = cursor.fetchall()
 
-
             self.word_cloud_label = QtWidgets.QLabel()
-            if os.path.exists('./data/wordcloud/' + weibo_name + '.jpg'):
-                self.word_cloud_label.setPixmap(QtGui.QPixmap('./data/wordcloud/' + weibo_name + '.jpg').scaled(360, 360, QtCore.Qt.KeepAspectRatio))
+            if os.path.exists('./data/wordcloud/' + self.weibo_uid + '.jpg'):
+                self.word_cloud_label.setPixmap(QtGui.QPixmap('./data/wordcloud/' + self.weibo_uid + '.jpg').scaled(360, 360, QtCore.Qt.KeepAspectRatio))
             else:
                 self.word_cloud_label.setPixmap(QtGui.QPixmap('./resources/icons/person.png').scaled(360, 360, QtCore.Qt.KeepAspectRatio))
 
             self.weibo_name_label = QtWidgets.QLabel(''.join(['微博昵称: ', weibo_name]))
-            self.last_post_time_label = QtWidgets.QLabel(''.join(['最近微博发布时间: ', 'None' if len(tweets)== 0 else tweets[0][0]]))
-            self.last_tweet_label = QtWidgets.QLabel(''.join(['最近微博: ', 'None' if len(tweets) == 0 else (tweets[0][1] if len(tweets[0][1]) > 0 else tweets[0][2])]))
-            self.last_tweet_label.setWordWrap(True)
+            self.crawl_button = QtWidgets.QPushButton('获取数据')
+            self.crawl_button.clicked.connect(self.on_crawl_button)
             self.more_button = QtWidgets.QPushButton('详细信息')
             self.more_button.clicked.connect(lambda: self.more_table.hide() if self.more_table.isVisible() else self.more_table.show())
+
+            if weibo_name == 'None':
+                self.crawl_button.setEnabled(False)
+                self.more_button.setEnabled(False)
+            elif len(tweets) == 0:
+                self.crawl_button.setEnabled(True)
+                self.more_button.setEnabled(False)
+            else:
+                self.crawl_button.setEnabled(False)
+                self.more_button.setEnabled(True)
 
             self.more_table = QtWidgets.QTableWidget()
             self.more_table.setRowCount(len(tweets))
@@ -589,8 +686,7 @@ class PersonCheckWidget(QtWidgets.QWidget):
             self.info_layout = QtWidgets.QVBoxLayout()
             self.info_layout.addStretch(0)
             self.info_layout.addWidget(self.weibo_name_label)
-            self.info_layout.addWidget(self.last_post_time_label)
-            self.info_layout.addWidget(self.last_tweet_label)
+            self.info_layout.addWidget(self.crawl_button)
             self.info_layout.addWidget(self.more_button)
             self.info_layout.addStretch(0)
 
@@ -602,6 +698,10 @@ class PersonCheckWidget(QtWidgets.QWidget):
             self.layout.addLayout(self.base_layout)
             self.layout.addWidget(self.more_table)
             self.setLayout(self.layout)
+
+        def on_crawl_button(self):
+            global WEIBO_CRAWL_SIG
+            WEIBO_CRAWL_SIG = self.weibo_uid
 
     class NetworkInfoWidget(QtWidgets.QWidget):
 
@@ -698,7 +798,7 @@ class PersonAmendWidget(QtWidgets.QWidget):
         person_ids = [x[0] for x in cursor.fetchall()]
 
         for i, person_id in enumerate(person_ids):
-            self.person_amend_display_widgets[person_id] = self.PersonAmendDisplayWidget(self.db_login, person_id)
+            self.person_amend_display_widgets[person_id] = self.PersonAmendDisplayWidget(self.db_login, person_id, self.person_id, self)
             self.list_layout.addWidget(self.person_amend_display_widgets[person_id], i//3, i%3)
 
         db_conn.close()
@@ -710,13 +810,86 @@ class PersonAmendWidget(QtWidgets.QWidget):
         self.layout.addWidget(self.cancel_button)
         self.setLayout(self.layout)
 
-    class PersonAmendDisplayWidget(PersonDisplayWidget):
-        def __init__(self, db_login, person_id):
-            super().__init__(db_login, person_id)
-            self.context_menu.setEnabled(False)
+    class PersonAmendDisplayWidget(QtWidgets.QWidget):
+        def __init__(self, db_login, person_id, amending_id, parent):
+            super().__init__()
+            self.db_login = db_login
+            self.person_id = person_id
+            self.amending_id = amending_id
+            self.parent = parent
+            self.setFixedWidth(240)
 
-        def on_check_action(self):
-            print('haha')
+            db_conn = MySQLdb.connect(user=db_login['user'], passwd=db_login['passwd'], db=db_login['db'])
+            db_conn.set_character_set('utf8')
+            cursor = db_conn.cursor()
+            cursor.execute('SET NAMES utf8;')
+            cursor.execute('SET CHARACTER SET utf8;')
+            cursor.execute('SET character_set_connection=utf8;')
+
+            cursor.execute('SELECT name FROM Persons WHERE person_ID=%s', (person_id,))
+            self.name = cursor.fetchone()[0]
+            cursor.execute('SELECT meet_time, meet_place FROM Meets WHERE person_ID=%s ORDER BY meet_time DESC', (person_id,))
+            meet_results = cursor.fetchall()
+            self.last_meet_time = meet_results[0][0].strftime('%Y年%m月%d日%H时%M分')
+            self.last_meet_place = meet_results[0][1]
+            self.meet_times = len(meet_results)
+
+            # button
+            self.button = QtWidgets.QPushButton()
+            self.button.setFixedSize(QtCore.QSize(200, 150))
+            if os.path.exists('./data/photo/' + person_id + '.jpg'):
+                self.button.setIcon(QtGui.QIcon('./data/photo/' + person_id + '.jpg'))
+            else:
+                self.button.setIcon(QtGui.QIcon('./resources/icons/question.jpg'))
+            self.button.setIconSize(QtCore.QSize(200, 150))
+            self.button.clicked.connect(self.on_button_clicked)
+
+            # button tips
+            btn_tips = ''.join(['总见面次数: ', str(self.meet_times), '\n',
+                                '最近见面时间: ', self.last_meet_time, '\n',
+                                '最近见面地点: ', self.last_meet_place])
+            self.button.setToolTip(btn_tips)
+
+            # label
+            label = QtWidgets.QLabel(self.name)
+
+            # set layout
+            self.layout = QtWidgets.QVBoxLayout()
+            self.layout.setAlignment(QtCore.Qt.AlignCenter)
+            self.layout.addWidget(self.button)
+            self.layout.addWidget(label)
+            self.setLayout(self.layout)
+
+            db_conn.close()
+
+
+        def on_button_clicked(self):
+            confirm_msg = ''.join(['确认要修正为', self.name, '吗?'])
+            reply = QtWidgets.QMessageBox.question(self, '', confirm_msg,
+                                                    QtWidgets.QMessageBox.Yes, QtWidgets.QMessageBox.No)
+            if reply == QtWidgets.QMessageBox.Yes:
+                global NEED_UPDATE
+                global STATUS_INFO
+                # amend self.amending_id to self.person_id
+                db_conn = MySQLdb.connect(user=self.db_login['user'], passwd=self.db_login['passwd'], db=self.db_login['db'])
+                db_conn.set_character_set('utf8')
+                cursor = db_conn.cursor()
+                cursor.execute('SET NAMES utf8;')
+                cursor.execute('SET CHARACTER SET utf8;')
+                cursor.execute('SET character_set_connection=utf8;')
+                cursor.execute('UPDATE Vectors SET person_ID=%s WHERE person_ID=%s', (self.person_id, self.amending_id))
+                cursor.execute('UPDATE Meets SET person_ID=%s WHERE person_ID=%s', (self.person_id, self.amending_id))
+                cursor.execute('UPDATE WeiboAccounts SET person_ID=%s WHERE person_ID=%s', (self.person_id, self.amending_id))
+                cursor.execute('UPDATE Relations SET person1_ID=%s WHERE person1_ID=%s', (self.person_id, self.amending_id))
+                cursor.execute('UPDATE Relations SET person2_ID=%s WHERE person2_ID=%s', (self.person_id, self.amending_id))
+                cursor.execute('DELETE FROM Persons WHERE person_ID=%s', (self.amending_id,))
+                db_conn.commit()
+                db_conn.close()
+                NEED_UPDATE = True
+                STATUS_INFO = '修正完成'
+                self.parent.close()
+            else:
+                pass
 
 
 
@@ -726,6 +899,7 @@ class MainTimerWidget(QtWidgets.QWidget):
     result_signal = QtCore.pyqtSignal(object)
     update_signal = QtCore.pyqtSignal()
     voice_signal = QtCore.pyqtSignal()
+    weibo_crawl_signal = QtCore.pyqtSignal(str)
 
     def __init__(self, video, image_queue, update_queue, result_queue):
         super().__init__()
@@ -770,6 +944,11 @@ class MainTimerWidget(QtWidgets.QWidget):
         if VOICE_SIG:
             self.voice_signal.emit()
             VOICE_SIG = False
+
+        global WEIBO_CRAWL_SIG
+        if WEIBO_CRAWL_SIG:
+            self.weibo_crawl_signal.emit(WEIBO_CRAWL_SIG)
+            WEIBO_CRAWL_SIG = ''
 
 
 
@@ -845,10 +1024,11 @@ class SocketServer(QtCore.QObject):
         self.addr = (ip, port)
 
     def open_socket(self):
+        global STATUS_INFO
         self.sock.bind(self.addr)
         self.sock.listen(10)
         self.sock.setblocking(False)
-        print('网络设置成功')
+        STATUS_INFO = '[网络设置成功]' + str(self.addr[0]) + ':' + str(self.addr[1])
         self.timer.start(200, self)
 
     def timerEvent(self, event):
@@ -864,7 +1044,8 @@ class SocketServer(QtCore.QObject):
         except:
             pass
         else:
-            print("New Connection")
+            global STATUS_INFO
+            STATUS_INFO = '建立新的网络连接'
             clientSocket.setblocking(False)
             self.clientAddrList.append((clientSocket, clientAddr))
         for clientSocket, clientAddr in self.clientAddrList:
@@ -874,10 +1055,10 @@ class SocketServer(QtCore.QObject):
                 pass
             else:
                 if len(RECV_DATA)>0:
-                    print(RECV_DATA)
+                    # print(RECV_DATA)
                     if RECV_DATA == 'voice':
                         VOICE_SIG = True
-                        print('语音播放')
+                        # print('语音播放')
                         return
                     MSG_ACC = True
 
@@ -901,19 +1082,142 @@ class AudioModule(QtCore.QObject):
         cursor.execute('SET NAMES utf8;')
         cursor.execute('SET CHARACTER SET utf8;')
         cursor.execute('SET character_set_connection=utf8;')
-        person_id_list = [r[0] for r in self.result[0]]
+        person_id_list = [r[0] for r in self.result]
         speech_content = []
 
-        speech_content.append('一共识别到' + str(len(person_id_list)) + '人')
+        if len(person_id_list) == 1:
+            speech_content.append('在您面前的是')
+        else:
+            speech_content.append('一共识别到' + str(len(person_id_list)) + '人')
+            speech_content.append('按从左至右顺序')
         for i, person_id in enumerate(person_id_list):
-            speech_content.append('第' + str(i+1) + '位')
-            cursor.execute('SELECT name FROM Persons WHERE person_ID=%s', (person_id,))
-            name = cursor.fetchone()[0]
-            speech_content.append(name if name != 'Unknown' else '陌生人')
+            if len(person_id_list) > 1:
+                speech_content.append('第' + str(i+1) + '位')
+            # name
+            if cursor.execute('SELECT name FROM Persons WHERE person_ID=%s', (person_id,)) > 0:
+                name = cursor.fetchone()[0]
+                speech_content.append(name if name != 'Unknown' else '陌生人')
+            else:
+                speech_content.append('陌生人')
+            # relations
+            cursor.execute('SELECT person1_ID, person2_ID, relation_type FROM Relations \
+                            WHERE person1_ID=%s OR person2_ID=%s', (person_id, person_id,))
+            relations = cursor.fetchall()[:3]
+            for relation in relations:
+                if relation[0] == person_id:
+                    cursor.execute('SELECT name FROM Persons WHERE person_ID=%s', (relation[1],))
+                    person2_name = cursor.fetchone()[0]
+                    speech_content.append('他是' + person2_name + '的' + relation[2])
+                else:
+                    cursor.execute('SELECT name FROM Persons WHERE person_ID=%s', (relation[0],))
+                    person1_name = cursor.fetchone()[0]
+                    speech_content.append(person1_name + '是他的' + relation[2])
+            # TODO weibos
 
-        print(','.join(speech_content))
+        # print(','.join(speech_content))
         speech_thread = threading.Thread(target=self.speech_robot.say, args=(','.join(speech_content),))
         speech_thread.start()
+
+    def hot_word_slot(self, hot_word):
+        if hot_word == '豆豆':
+            self.speech_robot.say('你好,我是豆豆')
+
+
+
+class WeiboCrawl(QtCore.QObject):
+
+    def __init__(self, db_login):
+        super().__init__()
+        self.db_login = db_login
+        self.timer = QtCore.QBasicTimer()
+        self.progress_queue = None
+        self.progress_widget = None
+        self.weibo_crawl_process = None
+
+    def start_crawl_weibo(self, uid):
+        db_conn = MySQLdb.connect(user=self.db_login['user'], passwd=self.db_login['passwd'], db=self.db_login['db'])
+        db_conn.set_character_set('utf8')
+        cursor = db_conn.cursor()
+        cursor.execute('SET NAMES utf8;')
+        cursor.execute('SET CHARACTER SET utf8;')
+        cursor.execute('SET character_set_connection=utf8;')
+        cursor.execute('SELECT weibo_name FROM WeiboAccounts WHERE weibo_uid=%s', (uid,))
+        self.weibo_name = cursor.fetchone()[0]
+        self.progress_queue = mp.Queue()
+        self.progress_widget = self.ProgressWidget(self.weibo_name)
+        self.progress_widget.show()
+        self.weibo_crawl_process = mp.Process(target=gui_utils.weibo_crawl_process, args=(self.db_login, uid, self.progress_queue,))
+        self.weibo_crawl_process.start()
+        self.timer.start(100, self)
+
+    def timerEvent(self, event):
+        global STATUS_INFO
+        if (event.timerId() != self.timer.timerId()):
+            return
+        if self.progress_queue is not None and not self.progress_queue.empty():
+            now, total = self.progress_queue.get()
+            self.progress_widget.set_progress((now / total)*100)
+        if not self.weibo_crawl_process.is_alive():
+            self.timer.stop()
+            self.progress_widget.close()
+            self.progress_queue.close()
+            self.progress_widget = None
+            self.progress_queue = None
+            self.weibo_crawl_process = None
+            STATUS_INFO = '微博' + self.weibo_name + '获取完成'
+
+    def weibo_crawl_slot(self, uid):
+        self.start_crawl_weibo(uid)
+
+    class ProgressWidget(QtWidgets.QWidget):
+
+        def __init__(self, weibo_name):
+            super().__init__()
+            self.setWindowTitle('正在爬取微博')
+            self.weibo_name_label = QtWidgets.QLabel('微博名: ' + weibo_name)
+            self.progress_bar = QtWidgets.QProgressBar()
+            self.progress_bar.setValue(0)
+            self.layout = QtWidgets.QVBoxLayout()
+            self.layout.addWidget(self.weibo_name_label)
+            self.layout.addWidget(self.progress_bar)
+            self.setLayout(self.layout)
+
+        def set_progress(self, value):
+            self.progress_bar.setValue(value)
+
+
+
+class VoiceWake(QtCore.QObject):
+
+    hot_word_signal = QtCore.pyqtSignal(str)
+
+    def __init__(self):
+        super().__init__()
+        self.signal_queue = None
+        self.timer = QtCore.QBasicTimer()
+        self.wake_up_detecter = None
+
+    def start_voice_wake(self):
+        self.signal_queue = mp.Queue()
+        self.wake_up_detecter = mp.Process(target=gui_utils.voice_wake_process, args=('./resources/models/doudou.pmdl', self.signal_queue,))
+        self.wake_up_detecter.start()
+        self.timer.start(200, self)
+
+    def stop_voice_wake(self):
+        self.timer.stop()
+        self.wake_up_detecter.terminate()
+        self.signal_queue.close()
+        self.wake_up_detecter = None
+        self.signal_queue = None
+
+
+    def timerEvent(self, event):
+        if (event.timerId() != self.timer.timerId()):
+            return
+        if self.signal_queue is not None and not self.signal_queue.empty():
+            hot_word = self.signal_queue.get()
+            self.hot_word_signal.emit(hot_word)
+            print(hot_word)
 
 
 
@@ -923,7 +1227,7 @@ def main():
                         + 'QLabel{qproperty-alignment: AlignCenter;}'
                         + 'QLabel{font-family: "宋体";}'
                     )
-    main = MainWindow({'user':'ayistar', 'passwd':'', 'db':'FDR'}, video=0)
+    main = MainWindow({'user':'hby', 'passwd':'', 'db':'FDR'}, video=0)
     main.show()
     sys.exit(app.exec_())
 

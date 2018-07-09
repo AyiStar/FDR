@@ -1,3 +1,7 @@
 .vscode/
 __pycache__/
 fdr/data/
+*snowboy*
+fdr/resources/models
+fdr/resources/alexa
+fdr/resources/*.wav

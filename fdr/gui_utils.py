@@ -14,6 +14,7 @@ import numpy as np
 import MySQLdb
 from PyQt5 import QtGui
 import networkx
+import snowboydecoder
 
 import face_utils
 import stat_utils
@@ -36,7 +37,7 @@ def recognize_face_process(q_image, q_result, q_change, q_change_in, db, user, p
         q_change: change OUT
     '''
     MEET_INTERVAL = 30
-    CONFIRM_GRADE = 5
+    CONFIRM_GRADE = 3
     unknown_confirm = 0
     db_conn = MySQLdb.connect(db=db, user=user, passwd=passwd)
     db_conn.set_character_set('utf8')
@@ -44,7 +45,6 @@ def recognize_face_process(q_image, q_result, q_change, q_change_in, db, user, p
 
     while True:
         image = q_image.get(True)
-        # cursor = db_conn.cursor()
         rgb_image = image[:, :, ::-1]
         face_locations = face_recognition.face_locations(rgb_image, number_of_times_to_upsample=1)
         face_encodings = face_recognition.face_encodings(rgb_image, face_locations, num_jitters=1)
@@ -57,6 +57,8 @@ def recognize_face_process(q_image, q_result, q_change, q_change_in, db, user, p
             match_id, match_dist = face_utils.match_face(distances, tolerance)
             match = (match_id, match_dist, top, right, bottom, left)
             face_matches.append(match)
+
+        face_matches.sort(key=lambda x: x[5])
 
         if [match for match in face_matches if len(match[0])==0]:
             unknown_confirm += 1
@@ -131,7 +133,7 @@ def recognize_face_process(q_image, q_result, q_change, q_change_in, db, user, p
                 pass
 
         if q_result.empty() and len(face_matches) > 0:
-            q_result.put((face_matches, image))
+            q_result.put(face_matches)
             while not q_result.empty():
                 pass
 
@@ -157,54 +159,15 @@ def recognize_face_process(q_image, q_result, q_change, q_change_in, db, user, p
 
 
 
+def weibo_crawl_process(db_login, uid, progress_queue=None):
 
-def stranger_entry_process(db_user, db_passwd, db_name, person_name, image, q_change, tolerance=0.4):
-
-    db_conn = MySQLdb.connect(user=db_user, passwd=db_passwd, db=db_name)
-    cursor = db_conn.cursor()
-    known_faces = face_utils.load_faces(db_name, db_user, db_passwd)
-
-    rgb_image = image[:, :, ::-1]
-    face_locations = face_recognition.face_locations(rgb_image, number_of_times_to_upsample=1)
-    if len(face_locations) > 1:
-        print("Error: too many people in camera")
-        return
-    face_encodings = face_recognition.face_encodings(rgb_image, face_locations, num_jitters=1)
-    face_matches = []
-
-    distances = face_utils.get_face_distances(known_faces, face_encodings[0])
-    person_id, match_dist = face_utils.match_face(distances, tolerance)
-
-
-    if person_id == '':
-        cursor.execute('SELECT UUID()')
-        person_id = cursor.fetchone()[0]
-        current_time = datetime.strftime(datetime.now(), '%Y-%m-%d-%H-%M-%S')
-        cursor.execute('INSERT INTO Persons (person_ID, name, last_meet_time) VALUES (%s, %s, %s)', (person_id, person_name, current_time))
-        # store the image
-        cv2.imwrite('./data/photo/' + person_id + '.jpg', self.image)
-    else:
-        cursor.execute('UPDATE Persons SET name=%s WHERE person_ID=%s', (person_name, person_id))
-    vector = pickle.dumps(face_encodings[0])
-    cursor.execute('INSERT INTO Vectors (vector, person_ID) VALUES (%s,%s)', (vector, person_id))
-    db_conn.commit()
-    q_change.put(0)
-
-
-
-def weibo_entry_process(db_user, db_passwd, db_name, person_name, weibo_user_name):
-    cookie = {
-            "Cookie": '_T_WM=46ac77aa23a8c1ecba62cea35d74782a; SUB=_2A252M0H0DeRhGeBP6FcU8CbEwzyIHXVV3G-8rDV6PUJbkdANLW_9kW1NRU6EfTCytvr8Jijab7SH2IrbDcZ6rBBK; SUHB=0M2Vamy4SBy7uA; SCF=ArZJ2F9V-QuNENdMfe1ebva5AQUlf13tiq0ofE3CYdI9N-YhR3ydNMtVgWq23eD_wmj5kfNH_2EvoD_QMK9eCJg.; M_WEIBOCN_PARAMS=luicode%3D10000011%26lfid%3D102803_ctg1_8999_-_ctg1_8999_home; MLOGIN=1',
-            }
-    wb = weibo_utils.WeiboClient(cookie=cookie, db_user=db_user, db_passwd=db_passwd, db_name=db_name)
-    uid = wb.get_uid(weibo_user_name)
-    if uid is not None:
-        wb.save_info(person_name, weibo_user_name, uid)
-        wb.get_weibo([uid])
-        ws = stat_utils.WeiboStat(db_user, db_passwd, db_name)
-        ws.get_text(uid)
-        ws.word_stat()
-        ws.generate_word_cloud(pic_path='./data/wordcloud/', weibo_user_name=weibo_user_name)
+    weibo_crawler = weibo_utils.WeiboCrawler(db_login)
+    weibo_data = weibo_crawler.get_weibos(uid, progress_queue=progress_queue)
+    weibo_crawler.export_to_database(weibo_data)
+    weibo_stat = stat_utils.WeiboStat(db_login['user'], db_login['passwd'], db_login['db'])
+    weibo_stat.get_text(uid)
+    weibo_stat.word_stat()
+    weibo_stat.generate_word_cloud('./data/wordcloud/', uid)
 
 
 
@@ -264,27 +227,51 @@ def alter_person(db_login, person_id, alter_info):
     if 'name' in alter_info:
         cursor.execute('UPDATE Persons SET name=%s WHERE person_ID=%s', (alter_info['name'], person_id))
 
+    # relation
+    if 'relation' in alter_info:
+        network_stat = stat_utils.NetworkStat(db_login['user'], db_login['passwd'], db_login['name'])
+        for relation in alter_info['relation']:
+            if relation['namea'] and relation['nameb']:
+                return '关系输入格式错误'
+            elif not relation['namea'] and not relation['nameb']:
+                return '关系输入格式错误'
+            elif not relation['namea']:
+                if cursor.execute('SELECT person_ID FROM Persons WHERE name=%s', (relation['nameb'],)) == 0:
+                    return relation['nameb'] + '不存在'
+                person2_id = cursor.fetchall()[0][0]
+                cursor.execute('INSERT INTO Relations (person1_ID, person2_ID, relation_type) VALUES (%s, %s, %s)',
+                                (person_id, person2_id, relation['rel']))
+                ns.generate_network(person2_id)
+            elif not relation['nameb']:
+                if cursor.execute('SELECT person_ID FROM Persons WHERE name=%s', (relation['namea'],)) == 0:
+                    return relation['namea'] + '不存在'
+                person1_id = cursor.fetchall()[0][0]
+                cursor.execute('INSERT INTO Relations (person1_ID, person2_ID, relation_type) VALUES (%s, %s, %s)',
+                                (person1_id, person_id, relation['rel']))
+                ns.generate_network(person1_id)
+            else:
+                pass
+        ns.generate_network(person_id)
+
     # weibo
-    # TODO
+    if 'weibo' in alter_info:
+        weibo_crawler = weibo_utils.WeiboCrawler(db_login)
+        uid = weibo_crawler.get_uid(alter_info['weibo'])
+        if uid:
+            cursor.execute('INSERT INTO WeiboAccounts (person_ID, weibo_name, weibo_uid) VALUES (%s, %s, %s)',
+                            (person_id, alter_info['weibo'], uid,))
+        else:
+            return '微博用户不存在'
 
 
-    # cursor.execute('SELECT name FROM Persons WHERE person_ID=%s', (person_id,))
-    # person_name = cursor.fetchone()[0]
-    # cursor.execute('SELECT person_ID FROM Persons WHERE name=%s', (alter_name,))
-    # result = cursor.fetchall()
-
-    # if len(result) > 0:
-    #     # alter_name exists
-    #     alter_person_id = result[0][0]
-    #     cursor.execute('DELETE FROM Persons WHERE person_ID=%s', (person_id,))
-    #     cursor.execute('UPDATE Vectors SET person_ID=%s WHERE person_ID=%s', (alter_person_id,person_id))
-    #     cursor.execute('UPDATE Meets SET person_ID=%s WHERE person_ID=%s', (alter_person_id,person_id))
-    #     cursor.execute('UPDATE WeiboAccounts SET person_ID=%s WHERE person_ID=%s', (alter_person_id,person_id))
-    #     cursor.execute('UPDATE Relations SET person1_ID=%s WHERE person1_ID=%s', (alter_person_id,person_id))
-    #     cursor.execute('UPDATE Relations SET person2_ID=%s WHERE person2_ID=%s', (alter_person_id,person_id))
-    # else:
-    #     # a new name
-    #     cursor.execute('UPDATE Persons SET name=%s WHERE person_ID=%s', (alter_name, person_id))
 
     db_conn.commit()
     db_conn.close()
+    return ''
+
+
+
+def voice_wake_process(model, signal_queue):
+    print('开始唤醒')
+    detector = snowboydecoder.HotwordDetector(model, sensitivity=0.5)
+    detector.start(detected_callback=lambda: signal_queue.put('豆豆') ,sleep_time=0.03)
