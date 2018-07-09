@@ -492,13 +492,13 @@ class PersonDisplayWidget(QtWidgets.QWidget):
                     display_info.extend(['微博昵称: ', self.alter_info['weibo'], '\n'])
                 if 'relationship' in self.alter_info:
                     display_info.extend(['关系:\n'])
-                    for i, relation in self.alter_info['relationship']:
+                    for i, relation in enumerate(self.alter_info['relationship']):
                         if not relation['namea']:
-                            display_info.extend([str(i), ': ', 'TA是', relation['nameb'], '的', relation['rel'], '\n'])
+                            display_info.extend([str(i+1), ': ', 'TA是', relation['nameb'], '的', relation['rel'], '\n'])
                         elif not relation['nameb']:
-                            display_info.extend([str(i), ': ', relation['namea'], '是TA的', relation['rel'], '\n'])
+                            display_info.extend([str(i+1), ': ', relation['namea'], '是TA的', relation['rel'], '\n'])
                         else:
-                            display_info.extend([str(i), ': 输入错误\n'])
+                            display_info.extend([str(i+1), ': 输入错误\n'])
                 display_info.append('是否确认修改?')
                 self.alter_widget.get_alter_info(''.join(display_info))
                 MSG_ACC = False
