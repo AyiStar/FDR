@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS WeiboAccounts(
     PRIMARY KEY (weibo_account_ID)
 ) DEFAULT CHARSET=utf8;
 
-CREATE TABLE Weibos(
+CREATE TABLE IF NOT EXISTS Weibos(
     weibo_ID bigint NOT NULL AUTO_INCREMENT,
     user_ID VARCHAR(31) DEFAULT NULL,
     user_name VARCHAR(255) DEFAULT NULL,
@@ -47,10 +47,19 @@ CREATE TABLE Weibos(
     PRIMARY KEY (weibo_ID)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
-CREATE TABLE Relations(
+CREATE TABLE IF NOT EXISTS Relations(
     relation_ID bigint NOT NULL AUTO_INCREMENT,
     person1_ID CHAR(36) NOT NULL,
     person2_ID CHAR(36) NOT NULL,
     relation_type VARCHAR(31) NOT NULL,
     PRIMARY KEY (relation_ID)
+)DEFAULT CHARSET=utf8;
+
+CREATE TABLE IF NOT EXISTS WeiboHotWords(
+    weibo_hot_word_ID bigint NOT NULL AUTO_INCREMENT,
+    weibo_uid VARCHAR(31) NOT NULL,
+    hot_word VARCHAR(31) NOT NULL,
+    frequency int UNSIGNED NOT NULL,
+    description text CHARACTER SET utf8mb4,
+    PRIMARY KEY (weibo_hot_word_ID)
 )DEFAULT CHARSET=utf8;

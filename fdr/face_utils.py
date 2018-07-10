@@ -193,7 +193,7 @@ def recognize_face_from_file(db_login, file_path, tolerance=0.4, verbose=False):
         face_matches.append(match)
 
     if verbose:
-        print(str(len(face_matches)) + 'faces detected')
+        print(str(len(face_matches)) + ' face(s) detected')
 
     for match in face_matches:
 

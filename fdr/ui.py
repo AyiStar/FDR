@@ -83,10 +83,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.main_timer_widget.start_timing()
         # self.voice_wake.start_voice_wake()
 
-        self.center()
         self.init_menu_bar()
         self.init_tool_bar()
         self.init_directory()
+        # self.showFullScreen()
+        self.showMaximized()
 
         global STATUS_INFO
         STATUS_INFO = '准备就绪'
@@ -96,7 +97,6 @@ class MainWindow(QtWidgets.QMainWindow):
         frameGm = self.frameGeometry()
         screen = QtWidgets.QApplication.desktop().screenNumber(QtWidgets.QApplication.desktop().cursor().pos())
         centerPoint = QtWidgets.QApplication.desktop().screenGeometry(screen).center()
-        # cp = QtWidgets.QDesktopWidget().availableGeometry().center()
         frameGm.moveCenter(centerPoint)
         self.move(frameGm.topLeft())
 
@@ -331,6 +331,9 @@ class PersonListWidget(QtWidgets.QWidget):
 
     def __init__(self, db_login, known):
         super().__init__()
+        screen = QtWidgets.QApplication.desktop().screenNumber(QtWidgets.QApplication.desktop().cursor().pos())
+        screen_width = QtWidgets.QApplication.desktop().screenGeometry(screen).width()
+        self._PEOPLE_PER_LINE = screen_width // 250
         self.db_login = db_login
         self.known = known
         self.person_display_widgets = {}
@@ -361,7 +364,7 @@ class PersonListWidget(QtWidgets.QWidget):
 
         for i, person_id in enumerate(person_ids):
             self.person_display_widgets[person_id] = PersonDisplayWidget(self.db_login, person_id)
-            self.layout.addWidget(self.person_display_widgets[person_id], i//3, i%3)
+            self.layout.addWidget(self.person_display_widgets[person_id], i//self._PEOPLE_PER_LINE, i%self._PEOPLE_PER_LINE)
 
         db_conn.close()
 
@@ -556,16 +559,31 @@ class PersonCheckWidget(QtWidgets.QWidget):
     def __init__(self, db_login, person_id):
         super().__init__()
         self.setWindowTitle('信息查看')
-        self.layout = QtWidgets.QVBoxLayout()
-        self.tabs = QtWidgets.QTabWidget()
         self.base_info_widget = self.BaseInfoWidget(db_login, person_id)
         self.weibo_info_widget = self.WeiboInfoWidget(db_login, person_id)
         self.network_info_widget = self.NetworkInfoWidget(db_login, person_id)
-        self.tabs.addTab(self.base_info_widget, '基本信息')
-        self.tabs.addTab(self.weibo_info_widget, '兴趣分析')
-        self.tabs.addTab(self.network_info_widget, '关系网络')
-        self.layout.addWidget(self.tabs)
-        self.setLayout(self.layout)
+        self.return_button = QtWidgets.QPushButton('返回')
+        self.return_button.clicked.connect(self.close)
+        separator1 = QtWidgets.QFrame()
+        separator1.setFrameShape(QtWidgets.QFrame.VLine)
+        separator1.setSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Expanding)
+        separator1.setLineWidth(3)
+        separator2 = QtWidgets.QFrame()
+        separator2.setFrameShape(QtWidgets.QFrame.VLine)
+        separator2.setSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Expanding)
+        separator2.setLineWidth(3)
+        self.main_layout = QtWidgets.QHBoxLayout()
+        self.main_layout.addWidget(self.base_info_widget)
+        self.main_layout.addWidget(separator1)
+        self.main_layout.addWidget(self.weibo_info_widget)
+        self.main_layout.addWidget(separator2)
+        self.main_layout.addWidget(self.network_info_widget)
+        self.total_layout = QtWidgets.QVBoxLayout()
+        self.total_layout.addLayout(self.main_layout)
+        self.total_layout.addWidget(self.return_button)
+        self.setLayout(self.total_layout)
+        # self.showFullScreen()
+        self.showMaximized()
 
     class BaseInfoWidget(QtWidgets.QWidget):
 
@@ -583,6 +601,8 @@ class PersonCheckWidget(QtWidgets.QWidget):
             cursor.execute('SELECT meet_time, meet_place FROM Meets WHERE person_ID=%s ORDER BY meet_time DESC', (person_id,))
             meets = cursor.fetchall()
 
+            self.title_label = QtWidgets.QLabel('基本信息')
+            self.title_label.setStyleSheet('QLabel {font: 30px}')
 
             self.photo_label = QtWidgets.QLabel()
             if os.path.exists('./data/photo/' + person_id + '.jpg'):
@@ -619,11 +639,13 @@ class PersonCheckWidget(QtWidgets.QWidget):
             self.info_layout.addWidget(self.more_button)
             self.info_layout.addStretch(0)
 
-            self.base_layout = QtWidgets.QHBoxLayout()
+            self.base_layout = QtWidgets.QVBoxLayout()
             self.base_layout.addWidget(self.photo_label)
             self.base_layout.addLayout(self.info_layout)
 
             self.layout = QtWidgets.QVBoxLayout()
+            self.layout.setAlignment(QtCore.Qt.AlignTop)
+            self.layout.addWidget(self.title_label)
             self.layout.addLayout(self.base_layout)
             self.layout.addWidget(self.more_table)
             self.setLayout(self.layout)
@@ -644,6 +666,9 @@ class PersonCheckWidget(QtWidgets.QWidget):
             cursor.execute('SELECT post_time, tweet, forwarding FROM Weibos WHERE user_ID=%s', (self.weibo_uid,))
             tweets = cursor.fetchall()
 
+            self.title_label = QtWidgets.QLabel('兴趣分析')
+            self.title_label.setStyleSheet('QLabel {font: 30px}')
+
             self.word_cloud_label = QtWidgets.QLabel()
             if os.path.exists('./data/wordcloud/' + self.weibo_uid + '.jpg'):
                 self.word_cloud_label.setPixmap(QtGui.QPixmap('./data/wordcloud/' + self.weibo_uid + '.jpg').scaled(360, 360, QtCore.Qt.KeepAspectRatio))
@@ -653,55 +678,76 @@ class PersonCheckWidget(QtWidgets.QWidget):
             self.weibo_name_label = QtWidgets.QLabel(''.join(['微博昵称: ', weibo_name]))
             self.crawl_button = QtWidgets.QPushButton('获取数据')
             self.crawl_button.clicked.connect(self.on_crawl_button)
-            self.more_button = QtWidgets.QPushButton('详细信息')
-            self.more_button.clicked.connect(lambda: self.more_table.hide() if self.more_table.isVisible() else self.more_table.show())
+            # self.more_button = QtWidgets.QPushButton('详细信息')
+            # self.more_button.clicked.connect(lambda: self.more_table.hide() if self.more_table.isVisible() else self.more_table.show())
 
             if weibo_name == 'None':
                 self.crawl_button.setEnabled(False)
-                self.more_button.setEnabled(False)
+                # self.more_button.setEnabled(False)
             elif len(tweets) == 0:
                 self.crawl_button.setEnabled(True)
-                self.more_button.setEnabled(False)
+                # self.more_button.setEnabled(False)
             else:
                 self.crawl_button.setEnabled(False)
-                self.more_button.setEnabled(True)
+                # self.more_button.setEnabled(True)
 
-            self.more_table = QtWidgets.QTableWidget()
-            self.more_table.setRowCount(len(tweets))
-            self.more_table.setColumnCount(2)
-            self.more_table.verticalHeader().setVisible(False)
-            self.more_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
-            self.more_table.setHorizontalHeaderLabels(['发布时间', '微博内容'])
-            self.more_table.horizontalHeaderItem(0).setTextAlignment(QtCore.Qt.AlignLeft)
-            self.more_table.horizontalHeaderItem(1).setTextAlignment(QtCore.Qt.AlignLeft)
-            self.more_table.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOn)
-            self.more_table.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOn)
-            self.more_table.setMinimumHeight(200)
-            self.more_table.hide()
-            for i, tweet in enumerate(tweets):
-                self.more_table.setItem(i, 0, QtWidgets.QTableWidgetItem(tweet[0]))
-                self.more_table.setItem(i, 1, QtWidgets.QTableWidgetItem(tweet[1] if len(tweet[1]) > 0 else len(tweet[2])))
+            # self.more_table = QtWidgets.QTableWidget()
+            # self.more_table.setRowCount(len(tweets))
+            # self.more_table.setColumnCount(2)
+            # self.more_table.verticalHeader().setVisible(False)
+            # self.more_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
+            # self.more_table.setHorizontalHeaderLabels(['发布时间', '微博内容'])
+            # self.more_table.horizontalHeaderItem(0).setTextAlignment(QtCore.Qt.AlignLeft)
+            # self.more_table.horizontalHeaderItem(1).setTextAlignment(QtCore.Qt.AlignLeft)
+            # self.more_table.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOn)
+            # self.more_table.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOn)
+            # self.more_table.setMinimumHeight(200)
+            # self.more_table.hide()
+            # for i, tweet in enumerate(tweets):
+            #     self.more_table.setItem(i, 0, QtWidgets.QTableWidgetItem(tweet[0]))
+            #     self.more_table.setItem(i, 1, QtWidgets.QTableWidgetItem(tweet[1] if len(tweet[1]) > 0 else len(tweet[2])))
 
-
-            self.info_layout = QtWidgets.QVBoxLayout()
-            self.info_layout.addStretch(0)
-            self.info_layout.addWidget(self.weibo_name_label)
-            self.info_layout.addWidget(self.crawl_button)
-            self.info_layout.addWidget(self.more_button)
-            self.info_layout.addStretch(0)
-
-            self.base_layout = QtWidgets.QHBoxLayout()
-            self.base_layout.addWidget(self.word_cloud_label)
-            self.base_layout.addLayout(self.info_layout)
+            self.interest_layout = QtWidgets.QGridLayout()
+            cursor.execute('SELECT hot_word, description FROM WeiboHotWords WHERE weibo_uid=%s ORDER BY frequency DESC', (self.weibo_uid,))
+            hot_words = cursor.fetchall()[:5]
+            for i, (word, description) in enumerate(hot_words):
+                self.interest_layout.addWidget(self.HotWordButton(word, description), i//2, i%2)
 
             self.layout = QtWidgets.QVBoxLayout()
-            self.layout.addLayout(self.base_layout)
-            self.layout.addWidget(self.more_table)
+            self.layout.setAlignment(QtCore.Qt.AlignTop)
+            self.layout.addWidget(self.title_label)
+            self.layout.addWidget(self.word_cloud_label)
+            self.layout.addWidget(self.weibo_name_label)
+            self.layout.addWidget(self.crawl_button)
+            self.layout.addLayout(self.interest_layout)
+            # self.layout.addWidget(self.more_table)
             self.setLayout(self.layout)
 
         def on_crawl_button(self):
             global WEIBO_CRAWL_SIG
             WEIBO_CRAWL_SIG = self.weibo_uid
+
+        def say_description(self, description):
+            speech_robot = audio_utils.SpeechRobot()
+            speech_robot.say(description)
+
+        class HotWordButton(QtWidgets.QPushButton):
+            def __init__(self, word, description):
+                super().__init__()
+                self.word = word
+                self.description = description
+                self.setText(word)
+                if description:
+                    self.setToolTip(description)
+                    self.clicked.connect(self.on_clicked)
+                    self.setEnabled(True)
+                else:
+                    self.setEnabled(False)
+
+            def on_clicked(self):
+                speech_robot = audio_utils.SpeechRobot()
+                speech_robot.say(self.word + ':' + self.description)
+
 
     class NetworkInfoWidget(QtWidgets.QWidget):
 
@@ -718,7 +764,8 @@ class PersonCheckWidget(QtWidgets.QWidget):
             cursor.execute('SELECT relation_type, person1_ID FROM Relations WHERE person2_ID=%s', (person_id,))
             result_2 = cursor.fetchall()
 
-            self.layout = QtWidgets.QHBoxLayout()
+            self.title_label = QtWidgets.QLabel('社交网络')
+            self.title_label.setStyleSheet('QLabel {font: 30px}')
 
             self.network_label = QtWidgets.QLabel()
             if os.path.exists('./data/network/' + person_id + '.jpg'):
@@ -743,7 +790,9 @@ class PersonCheckWidget(QtWidgets.QWidget):
                 person1_name = cursor.fetchone()[0]
                 self.relation_table.setItem(len(result_1) + i, 0, QtWidgets.QTableWidgetItem(''.join([person1_name, '是', person_name, '的', relation_type])))
 
-
+            self.layout = QtWidgets.QVBoxLayout()
+            self.layout.setAlignment(QtCore.Qt.AlignTop)
+            self.layout.addWidget(self.title_label)
             self.layout.addWidget(self.network_label)
             self.layout.addWidget(self.relation_table)
             self.setLayout(self.layout)
@@ -1090,6 +1139,7 @@ class AudioModule(QtCore.QObject):
         else:
             speech_content.append('一共识别到' + str(len(person_id_list)) + '人')
             speech_content.append('按从左至右顺序')
+
         for i, person_id in enumerate(person_id_list):
             if len(person_id_list) > 1:
                 speech_content.append('第' + str(i+1) + '位')
@@ -1099,6 +1149,14 @@ class AudioModule(QtCore.QObject):
                 speech_content.append(name if name != 'Unknown' else '陌生人')
             else:
                 speech_content.append('陌生人')
+            # last meet
+            cursor.execute('SELECT meet_time, meet_place FROM Meets WHERE person_ID=%s ORDER BY meet_time DESC', (person_id,))
+            meets = cursor.fetchall()
+            num_meets = len(meets)
+            speech_content.append('这是您与他的第' + str(num_meets) + '次相遇')
+            if num_meets > 1:
+                last_meet_time, last_meet_place = meets[-2]
+                speech_content.append('您上一次遇见他是在' + last_meet_time.strftime('%Y年%m月%d日%H时%M分') + ',于' + last_meet_place)
             # relations
             cursor.execute('SELECT person1_ID, person2_ID, relation_type FROM Relations \
                             WHERE person1_ID=%s OR person2_ID=%s', (person_id, person_id,))
@@ -1112,7 +1170,14 @@ class AudioModule(QtCore.QObject):
                     cursor.execute('SELECT name FROM Persons WHERE person_ID=%s', (relation[0],))
                     person1_name = cursor.fetchone()[0]
                     speech_content.append(person1_name + '是他的' + relation[2])
-            # TODO weibos
+            # weibos
+            if cursor.execute('SELECT weibo_uid FROM WeiboAccounts WHERE person_ID=%s', (person_id,)) > 0:
+                weibo_uid = cursor.fetchall()[0][0]
+                cursor.execute('SELECT hot_word FROM WeiboHotWords WHERE weibo_uid=%s ORDER BY frequency DESC', (weibo_uid,))
+                hot_words = [x[0] for x in cursor.fetchall()[:5]]
+                speech_content.append('他感兴趣的有')
+                speech_content.extend(hot_words)
+
 
         # print(','.join(speech_content))
         speech_thread = threading.Thread(target=self.speech_robot.say, args=(','.join(speech_content),))
@@ -1184,40 +1249,6 @@ class WeiboCrawl(QtCore.QObject):
 
         def set_progress(self, value):
             self.progress_bar.setValue(value)
-
-
-
-class VoiceWake(QtCore.QObject):
-
-    hot_word_signal = QtCore.pyqtSignal(str)
-
-    def __init__(self):
-        super().__init__()
-        self.signal_queue = None
-        self.timer = QtCore.QBasicTimer()
-        self.wake_up_detecter = None
-
-    def start_voice_wake(self):
-        self.signal_queue = mp.Queue()
-        self.wake_up_detecter = mp.Process(target=gui_utils.voice_wake_process, args=('./resources/models/doudou.pmdl', self.signal_queue,))
-        self.wake_up_detecter.start()
-        self.timer.start(200, self)
-
-    def stop_voice_wake(self):
-        self.timer.stop()
-        self.wake_up_detecter.terminate()
-        self.signal_queue.close()
-        self.wake_up_detecter = None
-        self.signal_queue = None
-
-
-    def timerEvent(self, event):
-        if (event.timerId() != self.timer.timerId()):
-            return
-        if self.signal_queue is not None and not self.signal_queue.empty():
-            hot_word = self.signal_queue.get()
-            self.hot_word_signal.emit(hot_word)
-            print(hot_word)
 
 
 

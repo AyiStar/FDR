@@ -42,6 +42,7 @@ def recognize_face_process(q_image, q_result, q_change, q_change_in, db, user, p
     db_conn = MySQLdb.connect(db=db, user=user, passwd=passwd)
     db_conn.set_character_set('utf8')
     known_faces = face_utils.load_faces(db, user, passwd)
+    current_place = face_utils.get_geolocation()
 
     while True:
         image = q_image.get(True)
@@ -84,7 +85,7 @@ def recognize_face_process(q_image, q_result, q_change, q_change_in, db, user, p
                 current_time = datetime.now()
                 if (current_time - last_meet_time).seconds < MEET_INTERVAL:
                     continue
-                current_place = face_utils.get_geolocation()
+                # current_place = face_utils.get_geolocation()
                 current_time = current_time.strftime('%Y-%m-%d-%H-%M-%S')
                 cursor.execute('UPDATE Persons SET last_meet_time=%s WHERE person_ID=%s',
                                 (current_time, person_id,))
@@ -109,7 +110,7 @@ def recognize_face_process(q_image, q_result, q_change, q_change_in, db, user, p
                 cursor.execute('INSERT INTO Persons (person_ID, name, last_meet_time) VALUES (%s, %s, %s)', (person_id, name, current_time))
                 vector = pickle.dumps(temp_result[0])
                 cursor.execute('INSERT INTO Vectors (vector, person_ID) VALUES (%s,%s)', (vector, person_id))
-                current_place = face_utils.get_geolocation()
+                # current_place = face_utils.get_geolocation()
                 cursor.execute('INSERT INTO Meets (meet_time, meet_place, person_ID) VALUES (%s,%s,%s)',
                                 (current_time, current_place, person_id,))
 
@@ -167,34 +168,8 @@ def weibo_crawl_process(db_login, uid, progress_queue=None):
     weibo_stat = stat_utils.WeiboStat(db_login['user'], db_login['passwd'], db_login['db'])
     weibo_stat.get_text(uid)
     weibo_stat.word_stat()
+    weibo_stat.generate_hot_word(uid, 5)
     weibo_stat.generate_word_cloud('./data/wordcloud/', uid)
-
-
-
-def relation_entry_process(db_user, db_passwd, db_name, person1_name, person2_name, relation_type):
-    db_conn = MySQLdb.connect(user=db_user, passwd=db_passwd, db=db_name)
-    cursor = db_conn.cursor()
-    # get person 1
-    cursor.execute("SELECT person_ID FROM Persons WHERE name=%s", (person1_name,))
-    result = cursor.fetchall()
-    if len(result) == 0:
-        print('Error: person 1 does not exist')
-        return
-    person1_id = result[0][0]
-    # get person 2
-    cursor.execute("SELECT person_ID FROM Persons WHERE name=%s", (person2_name,))
-    result = cursor.fetchall()
-    if len(result) == 0:
-        print('Error: person 2 does not exist')
-        return
-    person2_id = result[0][0]
-    # insert relation
-    cursor.execute("INSERT INTO Relations (person1_ID, person2_ID, relation_type) VALUES (%s, %s, %s)",
-                    (person1_id, person2_id, relation_type))
-    db_conn.commit()
-    ns = stat_utils.NetworkStat(db_user, db_passwd, db_name)
-    ns.generate_network(person1_id)
-    ns.generate_network(person2_id)
 
 
 
@@ -269,7 +244,7 @@ def alter_person(db_login, person_id, alter_info):
 
 
 
-def voice_wake_process(model, signal_queue):
-    print('开始唤醒')
-    detector = snowboydecoder.HotwordDetector(model, sensitivity=0.5)
-    detector.start(detected_callback=lambda: signal_queue.put('豆豆') ,sleep_time=0.03)
+# def voice_wake_process(model, signal_queue):
+#     print('开始唤醒')
+#     detector = snowboydecoder.HotwordDetector(model, sensitivity=0.5)
+#     detector.start(detected_callback=lambda: signal_queue.put('豆豆') ,sleep_time=0.03)

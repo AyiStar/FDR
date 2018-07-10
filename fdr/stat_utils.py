@@ -1,4 +1,6 @@
-
+from collections import Counter
+import requests
+import re
 import MySQLdb
 from wordcloud import WordCloud
 import jieba
@@ -8,6 +10,7 @@ import matplotlib.font_manager as fm
 from PIL import Image
 import numpy as np
 import networkx as nx
+
 
 class WeiboStat:
 
@@ -33,12 +36,30 @@ class WeiboStat:
         self.word_stat = {}
         word_list = list(jieba.cut(self.text))
         for word in word_list:
-            if word in self.stop_words:
+            if word in self.stop_words or len(word) == 1:
                 continue
             if word in self.word_stat:
                 self.word_stat[word] += 1
             else:
                 self.word_stat[word] = 1
+
+    def generate_hot_word(self, uid, num_hot_words):
+        word_counter = Counter(self.word_stat)
+        hot_words = word_counter.most_common(num_hot_words)
+        db_conn = MySQLdb.connect(user=self.db_user, passwd=self.db_passwd, db=self.db_name)
+        db_conn.set_character_set('utf8')
+        cursor = db_conn.cursor()
+        cursor.execute('SET NAMES utf8;')
+        cursor.execute('SET CHARACTER SET utf8;')
+        cursor.execute('SET character_set_connection=utf8;')
+        cursor.execute('DELETE FROM WeiboHotWords WHERE weibo_uid=%s', (uid,))
+        for word, freq in hot_words:
+            description = get_knowledge(word)
+            cursor.execute('INSERT INTO WeiboHotWords (weibo_uid, hot_word, frequency, description) VALUES (%s, %s, %s, %s)',
+                            (uid, word, freq, description,))
+        db_conn.commit()
+        db_conn.close()
+
 
     def generate_word_cloud(self, pic_path, uid):
         mask_img = np.array(Image.open('./resources/icons/person.png'))
@@ -107,3 +128,35 @@ class NetworkStat:
         plt.savefig('./data/network/' + person_id + '.jpg')
         plt.clf()
         db_conn.close()
+
+
+
+def get_knowledge(keyword):
+    try:
+        url="http://apis.haoservice.com/efficient/robot?info="+keyword+" 是什么"+"&address=&key=5babd8b63012466bb3deed9daeca8aae"
+        r = requests.get(url, timeout=5)
+        json_obj = r.json()
+        if(json_obj["reason"]=="成功"):
+            text = json_obj["result"]["text"]
+            if(len(text)>=30):
+                #print("返回合法")
+                textlist=text.split("。")
+                if(len(textlist)==1):
+                    returntext = (textlist[0])
+                else:
+                    if(len(str(textlist[0]))>50):
+                        returntext=str(textlist[0]) + "。"
+                    else:
+                        returntext=(textlist[0])+"。"+str(textlist[1])+"。"
+                        if(len(returntext)>=60):
+                            returntext = str(textlist[0]) + "。"
+            else:
+                #print("舍弃")
+                #print(json_obj["result"]["text"])
+                returntext = ""
+            return re.sub(u"\\（.*?）|\\(.*?\\)|\\[.*?]|\\【.*?】", "", returntext)
+        else:
+            return ""
+            #print("未查询到有效内容")
+    except:
+        return ''
