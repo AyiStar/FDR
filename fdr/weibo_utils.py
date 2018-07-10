@@ -276,14 +276,20 @@ class WeiboCrawler():
                 app_user='824476660@qq.com', app_passwd='zhu19970316'):
         self.db_login = db_login
         api_addr = 'http://webapi.http.zhimacangku.com/getip?num=3&type=1&pro=&city=0&yys=0&port=1&time=1&ts=0&ys=0&cs=0&lb=1&sb=0&pb=4&mr=1&regions='
-        self.proxygetter = requests.get(api_addr)
+        try:
+            self.proxygetter = requests.get(api_addr , timeout = 5)
+        except:
+            pass
         self.ip_list = self.proxygetter.text.splitlines()
         if (self.proxygetter.text[0] == "{"):
             reip = re.compile(r'(?<![\.\d])(?:\d{1,3}\.){3}\d{1,3}(?![\.\d])')
             whitelist = reip.findall(self.proxygetter.text)
             print(whitelist[0] + "未被添加白名单, 正在添加...")
-            requests.get("http://web.http.cnapi.cc/index/index/save_white?neek=47525&appkey=334504bcbdd380c4a4cb5c04ed62aa3e&white=" + whitelist[0])
-            self.proxygetter = requests.get(api_addr)
+            try:
+                requests.get("http://web.http.cnapi.cc/index/index/save_white?neek=47525&appkey=334504bcbdd380c4a4cb5c04ed62aa3e&white=" + whitelist[0],timeout = 5)
+                self.proxygetter = requests.get(api_addr, timeout = 5)
+            except:
+                pass
             self.iplist = self.proxygetter.text.splitlines()
         self.weibo_client = weibo.Client(app_key, app_secret, app_redirect_uri,
                                 username=app_user, password=app_passwd)
@@ -336,7 +342,10 @@ class WeiboCrawler():
         proxyip = random.choice(self.ip_list)
         proxydict = {'http': 'http://' + proxyip}
         # print("正在使用代理", proxydict)
-        html = requests.get(starturl, headers=self.headers,proxies = proxydict).text
+        try:
+            html = requests.get(starturl, headers=self.headers,proxies = proxydict, timeout = 8).text
+        except:
+            pass
         time.sleep(0.3)
         jsondata = json.loads(html)
         try:
@@ -349,7 +358,10 @@ class WeiboCrawler():
 
         for i in range(1,t_p+1):
             url = 'https://m.weibo.cn/api/container/getIndex?uid={uid1}&luicode=10000011&type=all&containerid=107603{uid2}&page={p}'.format(uid1=uid, uid2=uid, p=i)
-            html = self.get_content(url)
+            try:
+                html = self.get_content(url, timeout = 6)
+            except:
+                pass
 
             if progress_queue is not None:
                 progress_queue.put((i-1, t_p))

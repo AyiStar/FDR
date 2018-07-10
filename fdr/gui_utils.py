@@ -42,7 +42,8 @@ def recognize_face_process(q_image, q_result, q_change, q_change_in, db, user, p
     db_conn = MySQLdb.connect(db=db, user=user, passwd=passwd)
     db_conn.set_character_set('utf8')
     known_faces = face_utils.load_faces(db, user, passwd)
-    current_place = face_utils.get_geolocation()
+    # current_place = face_utils.get_geolocation()
+    current_place = '湖北省武汉市'
 
     while True:
         image = q_image.get(True)
