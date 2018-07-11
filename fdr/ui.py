@@ -744,7 +744,8 @@ class PersonCheckWidget(QtWidgets.QWidget):
 
             def on_clicked(self):
                 speech_robot = audio_utils.SpeechRobot()
-                speech_robot.say(self.word + ':' + self.description)
+                speech_thread = threading.Thread(target=speech_robot.say, args=(self.word + ':' + self.description,))
+                speech_thread.start()
 
 
     class NetworkInfoWidget(QtWidgets.QWidget):
