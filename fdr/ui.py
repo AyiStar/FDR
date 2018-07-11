@@ -83,7 +83,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.main_timer_widget.start_timing()
         # self.voice_wake.start_voice_wake()
 
-        self.init_menu_bar()
+        # self.init_menu_bar()
         self.init_tool_bar()
         self.init_directory()
         # self.showFullScreen()

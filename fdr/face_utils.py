@@ -173,6 +173,11 @@ def recognize_face_from_file(db_login, file_path, tolerance=0.4, verbose=False):
     image = cv2.imread(file_path)
     if image is None:
         print('Error: image file not found')
+        return
+
+    MEET_INTERVAL = 30
+    CONFIRM_GRADE = 3
+    current_place = '湖北省武汉市武汉大学大学生创新创业中心'
     rgb_image = image[:, :, ::-1]
 
     if verbose:
@@ -217,7 +222,7 @@ def recognize_face_from_file(db_login, file_path, tolerance=0.4, verbose=False):
             current_time = datetime.now()
             if (current_time - last_meet_time).seconds < MEET_INTERVAL:
                 continue
-            current_place = get_geolocation()
+            # current_place = get_geolocation()
             current_time = current_time.strftime('%Y-%m-%d-%H-%M-%S')
             cursor.execute('UPDATE Persons SET last_meet_time=%s WHERE person_ID=%s',
                             (current_time, person_id,))
@@ -241,7 +246,7 @@ def recognize_face_from_file(db_login, file_path, tolerance=0.4, verbose=False):
             cursor.execute('INSERT INTO Persons (person_ID, name, last_meet_time) VALUES (%s, %s, %s)', (person_id, name, current_time))
             vector = pickle.dumps(temp_result[0])
             cursor.execute('INSERT INTO Vectors (vector, person_ID) VALUES (%s,%s)', (vector, person_id))
-            current_place = get_geolocation()
+            # current_place = get_geolocation()
             cursor.execute('INSERT INTO Meets (meet_time, meet_place, person_ID) VALUES (%s,%s,%s)',
                             (current_time, current_place, person_id,))
 

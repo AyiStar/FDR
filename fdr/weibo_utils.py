@@ -275,7 +275,7 @@ class WeiboCrawler():
                 app_redirect_uri='https://api.weibo.com/oauth2/default.html',
                 app_user='824476660@qq.com', app_passwd='zhu19970316'):
         self.db_login = db_login
-        api_addr = 'http://webapi.http.zhimacangku.com/getip?num=3&type=1&pro=&city=0&yys=0&port=1&time=1&ts=0&ys=0&cs=0&lb=1&sb=0&pb=4&mr=1&regions='
+        api_addr = 'http://webapi.http.zhimacangku.com/getip?num=15&type=1&pro=&city=0&yys=0&port=1&time=1&ts=0&ys=0&cs=0&lb=1&sb=0&pb=4&mr=1&regions='
         try:
             self.proxygetter = requests.get(api_addr , timeout = 5)
         except:
@@ -303,8 +303,11 @@ class WeiboCrawler():
                     time.sleep(0.2)
                     proxyip = random.choice(self.ip_list)
                     proxydict = {'http': 'http://' + proxyip}
-                    # print("正在使用代理", proxydict)
-                    htm = requests.get(URL,headers = self.headers, proxies = proxydict).text
+                    print("B正在使用代理", proxydict)
+                    try:
+                        htm = requests.get(URL,headers = self.headers,proxies=proxydict,timeout=5).text
+                    except:
+                        print("Error")
                 else:
                     break
         except:
@@ -339,11 +342,11 @@ class WeiboCrawler():
 
         weibolist = []
         starturl = 'https://m.weibo.cn/api/container/getIndex?uid={uid1}&luicode=10000011&type=all&containerid=107603{uid2}&page={p}'.format(uid1=uid, uid2=uid, p=1)
-        proxyip = random.choice(self.ip_list)
-        proxydict = {'http': 'http://' + proxyip}
-        # print("正在使用代理", proxydict)
+        #proxyip = random.choice(self.ip_list)
+        #proxydict = {'http': 'http://' + proxyip}
+        #print("A正在使用代理", proxydict)
         try:
-            html = requests.get(starturl, headers=self.headers,proxies = proxydict, timeout = 8).text
+            html = requests.get(starturl, headers=self.headers, timeout = 8).text
         except:
             pass
         time.sleep(0.3)
@@ -359,7 +362,7 @@ class WeiboCrawler():
         for i in range(1,t_p+1):
             url = 'https://m.weibo.cn/api/container/getIndex?uid={uid1}&luicode=10000011&type=all&containerid=107603{uid2}&page={p}'.format(uid1=uid, uid2=uid, p=i)
             try:
-                html = self.get_content(url, timeout = 6)
+                html = self.get_content(url)
             except:
                 pass
 
@@ -506,6 +509,7 @@ class WeiboCrawler():
         # cursor.execute('SET NAMES utf8;')
         # cursor.execute('SET CHARACTER SET utf8;')
         # cursor.execute('SET character_set_connection=utf8;')
+        print("1")
         for weibo in data:
             sql = 'INSERT INTO Weibos (`user_id`, `user_name`, `tweet`,  `forwarding`,`num_likes`,`num_forwardings`,\
                                 `num_comments`,`post_time`) VALUES ( %(user_id)s, %(user_name)s, %(tweet)s, %(forwarding)s, %(num_likes)s,\
@@ -513,7 +517,7 @@ class WeiboCrawler():
             value = {
                 'user_id': weibo['uid'],
                 'user_name': weibo['博主'],
-                'tweet': weibo['博文'].encode('utf8'),
+                'tweet': str(weibo['博文'].encode('gbk', 'ignore').decode('gbk', 'ignore')),
                 'forwarding': str(weibo['转发博文内容'].encode('gbk', 'ignore').decode('gbk', 'ignore')),
                 'num_likes': weibo['点赞数'],
                 'num_forwardings' : weibo['转发数'],

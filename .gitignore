@@ -5,3 +5,4 @@ fdr/data/
 fdr/resources/models
 fdr/resources/alexa
 fdr/resources/*.wav
+fdr/extra_photo/*
