@@ -123,9 +123,9 @@ class NetworkStat:
 
         pos = nx.spring_layout(G)
         plt.axis('off')
-        nx.draw_networkx(G, pos, labels=node_labels, width=1.5, font_size=48)
+        nx.draw_networkx(G, pos, labels=node_labels, width=1.5, font_size=24)
         #nx.draw_networkx_edges(G, pos)
-        nx.draw_networkx_edge_labels(G, pos, edge_labels, font_size=48)
+        nx.draw_networkx_edge_labels(G, pos, edge_labels, font_size=20)
         plt.savefig('./data/network/' + person_id + '.jpg')
         plt.clf()
         db_conn.close()

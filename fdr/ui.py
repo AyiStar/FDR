@@ -614,6 +614,7 @@ class PersonCheckWidget(QtWidgets.QWidget):
                 self.photo_label.setPixmap(QtGui.QPixmap('./resources/icons/question.jpg').scaled(width, width, QtCore.Qt.KeepAspectRatio))
 
             self.name_label = QtWidgets.QLabel(''.join(['姓名: ', name]))
+            self.total_meet_time_label = QtWidgets.QLabel(''.join(['总见面次数: ', str(len(meets))]))
             self.last_meet_time_label = QtWidgets.QLabel(''.join(['最近见面时间: ', meets[0][0].strftime('%Y年%m月%d日%H时%M分')]))
             self.last_meet_place_label = QtWidgets.QLabel(''.join(['最近见面地点: ', meets[0][1]]))
             self.more_button = QtWidgets.QPushButton('详细信息')
@@ -639,6 +640,7 @@ class PersonCheckWidget(QtWidgets.QWidget):
             self.layout.addWidget(self.photo_label)
             self.layout.addStretch(0)
             self.layout.addWidget(self.name_label)
+            self.layout.addWidget(self.total_meet_time_label)
             self.layout.addWidget(self.last_meet_time_label)
             self.layout.addWidget(self.last_meet_place_label)
             self.layout.addWidget(self.more_button)
