@@ -558,10 +558,13 @@ class PersonCheckWidget(QtWidgets.QWidget):
 
     def __init__(self, db_login, person_id):
         super().__init__()
+        screen = QtWidgets.QApplication.desktop().screenNumber(QtWidgets.QApplication.desktop().cursor().pos())
+        screen_width = QtWidgets.QApplication.desktop().screenGeometry(screen).width()
+        self._WIDGET_WIDTH = (screen_width // 3) - 80
         self.setWindowTitle('信息查看')
-        self.base_info_widget = self.BaseInfoWidget(db_login, person_id)
-        self.weibo_info_widget = self.WeiboInfoWidget(db_login, person_id)
-        self.network_info_widget = self.NetworkInfoWidget(db_login, person_id)
+        self.base_info_widget = self.BaseInfoWidget(db_login, person_id, self._WIDGET_WIDTH)
+        self.weibo_info_widget = self.WeiboInfoWidget(db_login, person_id, self._WIDGET_WIDTH)
+        self.network_info_widget = self.NetworkInfoWidget(db_login, person_id, self._WIDGET_WIDTH)
         self.return_button = QtWidgets.QPushButton('返回')
         self.return_button.clicked.connect(self.close)
         separator1 = QtWidgets.QFrame()
@@ -587,7 +590,7 @@ class PersonCheckWidget(QtWidgets.QWidget):
 
     class BaseInfoWidget(QtWidgets.QWidget):
 
-        def __init__(self, db_login, person_id):
+        def __init__(self, db_login, person_id, width):
             super().__init__()
             self.db_login = db_login
             db_conn = MySQLdb.connect(user=self.db_login['user'], passwd=self.db_login['passwd'], db=self.db_login['db'])
@@ -606,9 +609,9 @@ class PersonCheckWidget(QtWidgets.QWidget):
 
             self.photo_label = QtWidgets.QLabel()
             if os.path.exists('./data/photo/' + person_id + '.jpg'):
-                self.photo_label.setPixmap(QtGui.QPixmap('./data/photo/' + person_id + '.jpg').scaled(360, 360, QtCore.Qt.KeepAspectRatio))
+                self.photo_label.setPixmap(QtGui.QPixmap('./data/photo/' + person_id + '.jpg').scaled(width, width, QtCore.Qt.KeepAspectRatio))
             else:
-                self.photo_label.setPixmap(QtGui.QPixmap('./resources/icons/question.jpg').scaled(360, 360, QtCore.Qt.KeepAspectRatio))
+                self.photo_label.setPixmap(QtGui.QPixmap('./resources/icons/question.jpg').scaled(width, width, QtCore.Qt.KeepAspectRatio))
 
             self.name_label = QtWidgets.QLabel(''.join(['姓名: ', name]))
             self.last_meet_time_label = QtWidgets.QLabel(''.join(['最近见面时间: ', meets[0][0].strftime('%Y年%m月%d日%H时%M分')]))
@@ -645,7 +648,7 @@ class PersonCheckWidget(QtWidgets.QWidget):
 
     class WeiboInfoWidget(QtWidgets.QWidget):
 
-        def __init__(self, db_login, person_id):
+        def __init__(self, db_login, person_id, width):
             super().__init__()
             global WEIBO_CRAWL_SIG
             self.db_login = db_login
@@ -664,9 +667,9 @@ class PersonCheckWidget(QtWidgets.QWidget):
 
             self.word_cloud_label = QtWidgets.QLabel()
             if os.path.exists('./data/wordcloud/' + self.weibo_uid + '.jpg'):
-                self.word_cloud_label.setPixmap(QtGui.QPixmap('./data/wordcloud/' + self.weibo_uid + '.jpg').scaled(360, 360, QtCore.Qt.KeepAspectRatio))
+                self.word_cloud_label.setPixmap(QtGui.QPixmap('./data/wordcloud/' + self.weibo_uid + '.jpg').scaled(width, width, QtCore.Qt.KeepAspectRatio))
             else:
-                self.word_cloud_label.setPixmap(QtGui.QPixmap('./resources/icons/person.png').scaled(360, 360, QtCore.Qt.KeepAspectRatio))
+                self.word_cloud_label.setPixmap(QtGui.QPixmap('./resources/icons/person.png').scaled(width, width, QtCore.Qt.KeepAspectRatio))
 
             self.weibo_name_label = QtWidgets.QLabel(''.join(['微博昵称: ', weibo_name]))
             self.crawl_button = QtWidgets.QPushButton('获取数据')
@@ -746,7 +749,7 @@ class PersonCheckWidget(QtWidgets.QWidget):
 
     class NetworkInfoWidget(QtWidgets.QWidget):
 
-        def __init__(self, db_login, person_id):
+        def __init__(self, db_login, person_id, width):
             super().__init__()
             self.db_login = db_login
             db_conn = MySQLdb.connect(user=self.db_login['user'], passwd=self.db_login['passwd'], db=self.db_login['db'])
@@ -764,9 +767,9 @@ class PersonCheckWidget(QtWidgets.QWidget):
 
             self.network_label = QtWidgets.QLabel()
             if os.path.exists('./data/network/' + person_id + '.jpg'):
-                self.network_label.setPixmap(QtGui.QPixmap('./data/network/' + person_id + '.jpg').scaled(360, 360, QtCore.Qt.KeepAspectRatio))
+                self.network_label.setPixmap(QtGui.QPixmap('./data/network/' + person_id + '.jpg').scaled(width, width, QtCore.Qt.KeepAspectRatio))
             else:
-                self.network_label.setPixmap(QtGui.QPixmap('./resources/icons/social_network.jpg').scaled(360, 360, QtCore.Qt.KeepAspectRatio))
+                self.network_label.setPixmap(QtGui.QPixmap('./resources/icons/social_network.jpg').scaled(width, width, QtCore.Qt.KeepAspectRatio))
 
             self.relation_table = QtWidgets.QTableWidget()
             self.relation_table.setColumnCount(1)

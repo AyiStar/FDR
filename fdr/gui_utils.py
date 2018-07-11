@@ -234,6 +234,7 @@ def alter_person(db_login, person_id, alter_info):
         weibo_crawler = weibo_utils.WeiboCrawler(db_login)
         uid = weibo_crawler.get_uid(alter_info['weibo'])
         if uid:
+            cursor.execute('DELETE FROM WeiboAccounts WHERE person_ID=%s', (person_id,))
             cursor.execute('INSERT INTO WeiboAccounts (person_ID, weibo_name, weibo_uid) VALUES (%s, %s, %s)',
                             (person_id, alter_info['weibo'], uid,))
         else:
