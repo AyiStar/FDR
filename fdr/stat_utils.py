@@ -14,13 +14,14 @@ import networkx as nx
 
 class WeiboStat:
 
-    def __init__(self, db_user, db_passwd, db_name, stop_word_path='./resources/stop_words.txt'):
+    def __init__(self, db_user, db_passwd, db_name, stop_word_path='./resources/stop_words.txt', user_dict_path='./resources/user_dict.txt'):
         self.db_user = db_user
         self.db_passwd = db_passwd
         self.db_name = db_name
         self.text = None
         self.stat = None
         self.stop_words = set(line.strip() for line in open(stop_word_path, encoding='utf-8'))
+        jieba.load_userdict(user_dict_path)
 
     def get_text(self, uid):
         self.text = ''
