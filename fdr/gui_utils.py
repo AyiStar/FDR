@@ -219,6 +219,8 @@ def alter_person(db_login, person_id, alter_info):
                 if cursor.execute('SELECT person_ID FROM Persons WHERE name=%s', (relation['nameb'],)) == 0:
                     return relation['nameb'] + '不存在'
                 person2_id = cursor.fetchall()[0][0]
+                cursor.execute('DELETE FROM Relations WHERE person1_ID=%s AND person2_ID=%s', (person_id, person2_id,))
+                cursor.execute('DELETE FROM Relations WHERE person1_ID=%s AND person2_ID=%s', (person2_id, person_id,))
                 cursor.execute('INSERT INTO Relations (person1_ID, person2_ID, relation_type) VALUES (%s, %s, %s)',
                                 (person_id, person2_id, relation['rel']))
                 db_conn.commit()
@@ -227,6 +229,8 @@ def alter_person(db_login, person_id, alter_info):
                 if cursor.execute('SELECT person_ID FROM Persons WHERE name=%s', (relation['namea'],)) == 0:
                     return relation['namea'] + '不存在'
                 person1_id = cursor.fetchall()[0][0]
+                cursor.execute('DELETE FROM Relations WHERE person1_ID=%s AND person2_ID=%s', (person1_id, person_id,))
+                cursor.execute('DELETE FROM Relations WHERE person1_ID=%s AND person2_ID=%s', (person_id, person1_id,))
                 cursor.execute('INSERT INTO Relations (person1_ID, person2_ID, relation_type) VALUES (%s, %s, %s)',
                                 (person1_id, person_id, relation['rel']))
                 db_conn.commit()

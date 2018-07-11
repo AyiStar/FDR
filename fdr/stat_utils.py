@@ -10,6 +10,7 @@ import matplotlib.font_manager as fm
 from PIL import Image
 import numpy as np
 import networkx as nx
+from networkx.drawing.nx_agraph import graphviz_layout
 
 
 class WeiboStat:
@@ -121,11 +122,12 @@ class NetworkStat:
             G.add_edge(person1_id, person_id)
             edge_labels[(person1_id, person_id)] = relation_type
 
-        pos = nx.spring_layout(G)
+        # pos = nx.spring_layout(G, k=0.15, iterations=20)
+        pos = graphviz_layout(G)
         plt.axis('off')
-        nx.draw_networkx(G, pos, labels=node_labels, width=1.5, font_size=24)
+        nx.draw_networkx(G, pos, labels=node_labels, width=1.5, font_size=20)
         #nx.draw_networkx_edges(G, pos)
-        nx.draw_networkx_edge_labels(G, pos, edge_labels, font_size=20)
+        nx.draw_networkx_edge_labels(G, pos, edge_labels, font_size=16)
         plt.savefig('./data/network/' + person_id + '.jpg')
         plt.clf()
         db_conn.close()
