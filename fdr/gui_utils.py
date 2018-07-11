@@ -165,12 +165,16 @@ def weibo_crawl_process(db_login, uid, progress_queue=None):
 
     weibo_crawler = weibo_utils.WeiboCrawler(db_login)
     weibo_data = weibo_crawler.get_weibos(uid, progress_queue=progress_queue)
+    progress_queue.put('正在写入数据库...')
     weibo_crawler.export_to_database(weibo_data)
+    progress_queue.put('正在分析文本...')
     weibo_stat = stat_utils.WeiboStat(db_login['user'], db_login['passwd'], db_login['db'])
     weibo_stat.get_text(uid)
     weibo_stat.word_stat()
     weibo_stat.generate_hot_word(uid, 5)
     weibo_stat.generate_word_cloud('./data/wordcloud/', uid)
+    progress_queue.put('完成!')
+    time.sleep(1)
 
 
 

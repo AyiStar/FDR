@@ -1209,18 +1209,24 @@ class WeiboCrawl(QtCore.QObject):
         self.weibo_name = cursor.fetchone()[0]
         self.progress_queue = mp.Queue()
         self.progress_widget = self.ProgressWidget(self.weibo_name)
+        self.progress_widget.cancel_signal.connect(self.cancel_slot)
         self.progress_widget.show()
         self.weibo_crawl_process = mp.Process(target=gui_utils.weibo_crawl_process, args=(self.db_login, uid, self.progress_queue,))
         self.weibo_crawl_process.start()
         self.timer.start(100, self)
+
+    def cancel_slot(self):
+        # TODO
+        self.weibo_crawl_process.terminate()
+
 
     def timerEvent(self, event):
         global STATUS_INFO
         if (event.timerId() != self.timer.timerId()):
             return
         if self.progress_queue is not None and not self.progress_queue.empty():
-            now, total = self.progress_queue.get()
-            self.progress_widget.set_progress((now / total)*100)
+            progress = self.progress_queue.get()
+            self.progress_widget.set_progress(progress)
         if not self.weibo_crawl_process.is_alive():
             self.timer.stop()
             self.progress_widget.close()
@@ -1228,26 +1234,42 @@ class WeiboCrawl(QtCore.QObject):
             self.progress_widget = None
             self.progress_queue = None
             self.weibo_crawl_process = None
-            STATUS_INFO = '微博' + self.weibo_name + '获取完成'
+            STATUS_INFO = '微博' + self.weibo_name + '获取进程已退出'
 
     def weibo_crawl_slot(self, uid):
         self.start_crawl_weibo(uid)
 
     class ProgressWidget(QtWidgets.QWidget):
 
+        cancel_signal = QtCore.pyqtSignal()
+
         def __init__(self, weibo_name):
             super().__init__()
-            self.setWindowTitle('正在爬取微博')
+            self.setWindowTitle('微博获取进度')
             self.weibo_name_label = QtWidgets.QLabel('微博名: ' + weibo_name)
             self.progress_bar = QtWidgets.QProgressBar()
             self.progress_bar.setValue(0)
+            self.progress_label = QtWidgets.QLabel('正在爬取微博...')
+            self.cancel_button = QtWidgets.QPushButton('取消')
+            self.cancel_button.clicked.connect(self.on_cancel_button)
             self.layout = QtWidgets.QVBoxLayout()
+            self.layout.setAlignment(QtCore.Qt.AlignCenter)
             self.layout.addWidget(self.weibo_name_label)
+            self.layout.addWidget(self.progress_label)
             self.layout.addWidget(self.progress_bar)
+            self.layout.addWidget(self.cancel_button)
             self.setLayout(self.layout)
 
-        def set_progress(self, value):
-            self.progress_bar.setValue(value)
+        def set_progress(self, progress):
+            if type(progress) is str:
+                self.progress_bar.setValue(100)
+                self.progress_label.setText(progress)
+            else:
+                self.progress_bar.setValue((progress[0] / progress[1])*100)
+
+        def on_cancel_button(self):
+            self.cancel_signal.emit()
+            self.close()
 
 
 
