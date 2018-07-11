@@ -679,13 +679,9 @@ class PersonCheckWidget(QtWidgets.QWidget):
 
             if weibo_name == 'None':
                 self.crawl_button.setEnabled(False)
-                # self.more_button.setEnabled(False)
-            elif len(tweets) == 0:
-                self.crawl_button.setEnabled(True)
-                # self.more_button.setEnabled(False)
             else:
-                self.crawl_button.setEnabled(False)
-                # self.more_button.setEnabled(True)
+                self.crawl_button.setEnabled(True)
+
 
             # self.more_table = QtWidgets.QTableWidget()
             # self.more_table.setRowCount(len(tweets))
@@ -1216,7 +1212,6 @@ class WeiboCrawl(QtCore.QObject):
         self.timer.start(100, self)
 
     def cancel_slot(self):
-        # TODO
         self.weibo_crawl_process.terminate()
 
 

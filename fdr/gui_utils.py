@@ -14,7 +14,6 @@ import numpy as np
 import MySQLdb
 from PyQt5 import QtGui
 import networkx
-# import snowboydecoder
 
 import face_utils
 import stat_utils
@@ -206,6 +205,7 @@ def alter_person(db_login, person_id, alter_info):
     # name
     if 'name' in alter_info:
         cursor.execute('UPDATE Persons SET name=%s WHERE person_ID=%s', (alter_info['name'], person_id))
+    db_conn.commit()
 
     # relation
     if 'relationship' in alter_info:
@@ -221,6 +221,7 @@ def alter_person(db_login, person_id, alter_info):
                 person2_id = cursor.fetchall()[0][0]
                 cursor.execute('INSERT INTO Relations (person1_ID, person2_ID, relation_type) VALUES (%s, %s, %s)',
                                 (person_id, person2_id, relation['rel']))
+                db_conn.commit()
                 network_stat.generate_network(person2_id)
             elif not relation['nameb']:
                 if cursor.execute('SELECT person_ID FROM Persons WHERE name=%s', (relation['namea'],)) == 0:
@@ -228,9 +229,11 @@ def alter_person(db_login, person_id, alter_info):
                 person1_id = cursor.fetchall()[0][0]
                 cursor.execute('INSERT INTO Relations (person1_ID, person2_ID, relation_type) VALUES (%s, %s, %s)',
                                 (person1_id, person_id, relation['rel']))
+                db_conn.commit()
                 network_stat.generate_network(person1_id)
             else:
                 pass
+        db_conn.commit()
         network_stat.generate_network(person_id)
 
     # weibo
@@ -243,14 +246,9 @@ def alter_person(db_login, person_id, alter_info):
                             (person_id, alter_info['weibo'], uid,))
         else:
             return '微博用户不存在'
-
     db_conn.commit()
+
     db_conn.close()
     return ''
 
 
-
-# def voice_wake_process(model, signal_queue):
-#     print('开始唤醒')
-#     detector = snowboydecoder.HotwordDetector(model, sensitivity=0.5)
-#     detector.start(detected_callback=lambda: signal_queue.put('豆豆') ,sleep_time=0.03)

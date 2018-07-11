@@ -509,7 +509,7 @@ class WeiboCrawler():
         # cursor.execute('SET NAMES utf8;')
         # cursor.execute('SET CHARACTER SET utf8;')
         # cursor.execute('SET character_set_connection=utf8;')
-        print("1")
+        cursor.execute('DELETE FROM Weibos WHERE user_ID=%s', (weibo['uid'],))
         for weibo in data:
             sql = 'INSERT INTO Weibos (`user_id`, `user_name`, `tweet`,  `forwarding`,`num_likes`,`num_forwardings`,\
                                 `num_comments`,`post_time`) VALUES ( %(user_id)s, %(user_name)s, %(tweet)s, %(forwarding)s, %(num_likes)s,\
