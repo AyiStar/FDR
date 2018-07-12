@@ -420,7 +420,7 @@ class PersonDisplayWidget(QtWidgets.QWidget):
         self.amend_widget = None
 
         # button tips
-        btn_tips = ''.join(['总见面次数: ', str(self.meet_times), '\n',
+        btn_tips = ''.join(['热度: ', str(self.meet_times), '\n',
                             '最近见面时间: ', self.last_meet_time, '\n',
                             '最近见面地点: ', self.last_meet_place])
         self.button.setToolTip(btn_tips)
@@ -550,7 +550,13 @@ class PersonDisplayWidget(QtWidgets.QWidget):
 
     def on_amend_action(self):
         self.amend_widget = PersonAmendWidget(self.db_login, self.person_id)
-        self.amend_widget.show()
+        self.amend_scroll_area = QtWidgets.QScrollArea()
+        self.amend_scroll_area.setWindowTitle('信息修正')
+        self.amend_scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.amend_scroll_area.setMinimumWidth(self.amend_widget.minimumSizeHint().width())
+        self.amend_scroll_area.setWidget(self.amend_widget)
+        self.amend_widget.cancel_button.clicked.connect(self.amend_scroll_area.close)
+        self.amend_scroll_area.show()
 
 
 
@@ -614,9 +620,13 @@ class PersonCheckWidget(QtWidgets.QWidget):
                 self.photo_label.setPixmap(QtGui.QPixmap('./resources/icons/question.jpg').scaled(width, width, QtCore.Qt.KeepAspectRatio))
 
             self.name_label = QtWidgets.QLabel(''.join(['姓名: ', name]))
-            self.total_meet_time_label = QtWidgets.QLabel(''.join(['总见面次数: ', str(len(meets))]))
+            self.name_label.setStyleSheet('QLabel{qproperty-alignment: AlignLeft;}')
+            self.total_meet_time_label = QtWidgets.QLabel(''.join(['热度: ', str(len(meets))]))
+            self.total_meet_time_label.setStyleSheet('QLabel{qproperty-alignment: AlignLeft;}')
             self.last_meet_time_label = QtWidgets.QLabel(''.join(['最近见面时间: ', meets[0][0].strftime('%Y年%m月%d日%H时%M分')]))
+            self.last_meet_time_label.setStyleSheet('QLabel{qproperty-alignment: AlignLeft;}')
             self.last_meet_place_label = QtWidgets.QLabel(''.join(['最近见面地点: ', meets[0][1]]))
+            self.last_meet_place_label.setStyleSheet('QLabel{qproperty-alignment: AlignLeft;}')
             self.more_button = QtWidgets.QPushButton('详细信息')
             self.more_button.clicked.connect(lambda: self.more_table.hide() if self.more_table.isVisible() else self.more_table.show())
 
@@ -643,8 +653,8 @@ class PersonCheckWidget(QtWidgets.QWidget):
             self.layout.addWidget(self.total_meet_time_label)
             self.layout.addWidget(self.last_meet_time_label)
             self.layout.addWidget(self.last_meet_place_label)
-            self.layout.addWidget(self.more_button)
             self.layout.addStretch(0)
+            self.layout.addWidget(self.more_button)
             self.layout.addWidget(self.more_table)
             self.setLayout(self.layout)
 
@@ -703,7 +713,7 @@ class PersonCheckWidget(QtWidgets.QWidget):
 
             self.interest_layout = QtWidgets.QGridLayout()
             cursor.execute('SELECT hot_word, description FROM WeiboHotWords WHERE weibo_uid=%s ORDER BY frequency DESC', (self.weibo_uid,))
-            hot_words = cursor.fetchall()[:5]
+            hot_words = cursor.fetchall()[:10]
             for i, (word, description) in enumerate(hot_words):
                 self.interest_layout.addWidget(self.HotWordButton(word, description), i//2, i%2)
 
@@ -891,7 +901,7 @@ class PersonAmendWidget(QtWidgets.QWidget):
             self.button.clicked.connect(self.on_button_clicked)
 
             # button tips
-            btn_tips = ''.join(['总见面次数: ', str(self.meet_times), '\n',
+            btn_tips = ''.join(['热度: ', str(self.meet_times), '\n',
                                 '最近见面时间: ', self.last_meet_time, '\n',
                                 '最近见面地点: ', self.last_meet_place])
             self.button.setToolTip(btn_tips)
