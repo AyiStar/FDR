@@ -103,8 +103,8 @@ class NetworkStat:
         node_labels[person_id] = person_name
 
         cursor.execute('SELECT relation_type, person2_ID FROM Relations WHERE person1_ID=%s', (person_id,))
-        result = cursor.fetchall()
-        for relation_type, person2_id in result:
+        result1 = cursor.fetchall()
+        for relation_type, person2_id in result1:
             G.add_node(person2_id)
             cursor.execute('SELECT name FROM Persons WHERE person_ID=%s', (person2_id,))
             person2_name = cursor.fetchone()[0]
@@ -113,14 +113,23 @@ class NetworkStat:
             edge_labels[(person_id, person2_id)] = relation_type
 
         cursor.execute('SELECT relation_type, person1_ID FROM Relations WHERE person2_ID=%s', (person_id,))
-        result = cursor.fetchall()
-        for relation_type, person1_id in result:
+        result2 = cursor.fetchall()
+        for relation_type, person1_id in result2:
             G.add_node(person1_id)
             cursor.execute('SELECT name FROM Persons WHERE person_ID=%s', (person1_id,))
             person1_name = cursor.fetchone()[0]
             node_labels[person1_id] = person1_name
             G.add_edge(person1_id, person_id)
             edge_labels[(person1_id, person_id)] = relation_type
+
+        person_id_list = [r[1] for r in result1 + result2]
+        format_strings = ','.join(['%s'] * len(person_id_list))
+        cursor.execute('SELECT person1_ID, person2_ID, relation_type FROM Relations \
+                        WHERE person1_ID IN (%s) AND person2_ID IN (%s)' % (format_strings, format_strings), tuple(person_id_list*2))
+        result3 = cursor.fetchall()
+        for person1_id, person2_id, relation_type in result3:
+            G.add_edge(person1_id, person2_id)
+            edge_labels[(person1_id, person2_id)] = relation_type
 
         # pos = nx.spring_layout(G, k=0.15, iterations=20)
         pos = graphviz_layout(G)

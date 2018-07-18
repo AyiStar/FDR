@@ -13,6 +13,7 @@ import numpy as np
 import cv2
 
 import gui_utils
+import stat_utils
 import audio_utils
 
 
@@ -23,6 +24,7 @@ import audio_utils
 MSG_ACC = False
 RECV_DATA = ''
 VOICE_SIG = False
+SHOOT_SIG = False
 
 # used in UPDATE
 NEED_UPDATE = False
@@ -76,6 +78,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.main_timer_widget.result_signal.connect(self.audio_module.result_slot)
         self.main_timer_widget.result_signal.connect(self.result_slot)
         self.main_timer_widget.voice_signal.connect(self.audio_module.voice_slot)
+        self.main_timer_widget.shoot_signal.connect(self.face_recognition.shoot_slot)
         self.main_timer_widget.weibo_crawl_signal.connect(self.weibo_crawl.weibo_crawl_slot)
         # self.voice_wake.hot_word_signal.connect(self.audio_module.hot_word_slot)
 
@@ -239,7 +242,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def result_slot(self, result):
         global STATUS_INFO
-        person_id_list = [r[0] for r in result if r[0]]
+        person_id_list = [r[0] for r in result]
         person_name_list = []
         db_conn = MySQLdb.connect(user=self.db_login['user'], passwd=self.db_login['passwd'], db=self.db_login['db'])
         db_conn.set_character_set('utf8')
@@ -248,9 +251,13 @@ class MainWindow(QtWidgets.QMainWindow):
         cursor.execute('SET CHARACTER SET utf8;')
         cursor.execute('SET character_set_connection=utf8;')
         for person_id in person_id_list:
-            if cursor.execute('SELECT name FROM Persons WHERE person_ID=%s', (person_id,)) > 0:
+            if len(person_id) == 0:
+                person_name_list.append('未录入者')
+            elif cursor.execute('SELECT name FROM Persons WHERE person_ID=%s', (person_id,)) > 0:
                 person_name = cursor.fetchone()[0]
                 person_name_list.append(person_name if person_name != 'Unknown' else '陌生人')
+            else:
+                pass
         STATUS_INFO = '从左至右识别到: ' + ','.join(person_name_list)
 
 
@@ -369,6 +376,8 @@ class PersonListWidget(QtWidgets.QWidget):
         db_conn.close()
 
     def twinkle(self, person_id_list):
+        if len(person_id_list) == 0:
+            return
         for person_id in self.person_display_widgets:
             if person_id in person_id_list:
                 self.person_display_widgets[person_id].setTwinkle(True)
@@ -770,9 +779,17 @@ class PersonCheckWidget(QtWidgets.QWidget):
             result_1 = cursor.fetchall()
             cursor.execute('SELECT relation_type, person1_ID FROM Relations WHERE person2_ID=%s', (person_id,))
             result_2 = cursor.fetchall()
+            person_id_list = [r[1] for r in result_1 + result_2]
+            format_strings = ','.join(['%s'] * len(person_id_list))
+            cursor.execute('SELECT person1_ID, person2_ID, relation_type FROM Relations \
+                            WHERE person1_ID IN (%s) AND person2_ID IN (%s)' % (format_strings, format_strings), tuple(person_id_list*2))
+            result_3 = cursor.fetchall()
 
             self.title_label = QtWidgets.QLabel('社交网络')
             self.title_label.setStyleSheet('QLabel {font: 30px}')
+
+            network_stat = stat_utils.NetworkStat(db_login['user'], db_login['passwd'], db_login['db'])
+            network_stat.generate_network(person_id)
 
             self.network_label = QtWidgets.QLabel()
             if os.path.exists('./data/network/' + person_id + '.jpg'):
@@ -782,7 +799,7 @@ class PersonCheckWidget(QtWidgets.QWidget):
 
             self.relation_table = QtWidgets.QTableWidget()
             self.relation_table.setColumnCount(1)
-            self.relation_table.setRowCount(len(result_1) + len(result_2))
+            self.relation_table.setRowCount(len(result_1) + len(result_2) + len(result_3))
             self.relation_table.verticalHeader().setVisible(False)
             self.relation_table.setHorizontalHeaderLabels(['文字描述'])
             self.relation_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
@@ -791,11 +808,18 @@ class PersonCheckWidget(QtWidgets.QWidget):
             for i, (relation_type, person2_id) in enumerate(result_1):
                 cursor.execute('SELECT name FROM Persons WHERE person_ID=%s', (person2_id,))
                 person2_name = cursor.fetchone()[0]
-                self.relation_table.setItem(i, 0, QtWidgets.QTableWidgetItem(''.join([person_name, '是', person2_name, '的', relation_type])))
-            for i, (relation_type, person1_id) in enumerate(result_2):
+                self.relation_table.setItem(i, 0, QtWidgets.QTableWidgetItem(''.join(['TA是', person2_name, '的', relation_type])))
+            for i, (relation_type, person1_id) in enumerate(result_2, len(result_1)):
                 cursor.execute('SELECT name FROM Persons WHERE person_ID=%s', (person1_id,))
                 person1_name = cursor.fetchone()[0]
-                self.relation_table.setItem(len(result_1) + i, 0, QtWidgets.QTableWidgetItem(''.join([person1_name, '是', person_name, '的', relation_type])))
+                self.relation_table.setItem(i, 0, QtWidgets.QTableWidgetItem(''.join([person1_name, '是TA的', relation_type])))
+            for i, (person1_id, person2_id, relation_type) in enumerate(result_3, len(result_1)+len(result_2)):
+                cursor.execute('SELECT name FROM Persons WHERE person_ID=%s', (person1_id,))
+                person1_name = cursor.fetchone()[0]
+                cursor.execute('SELECT name FROM Persons WHERE person_ID=%s', (person2_id,))
+                person2_name = cursor.fetchone()[0]
+                self.relation_table.setItem(i, 0, QtWidgets.QTableWidgetItem(''.join([person1_name, '是', person2_name, '的', relation_type])))
+
 
             self.layout = QtWidgets.QVBoxLayout()
             self.layout.setAlignment(QtCore.Qt.AlignTop)
@@ -955,6 +979,7 @@ class MainTimerWidget(QtWidgets.QWidget):
     result_signal = QtCore.pyqtSignal(object)
     update_signal = QtCore.pyqtSignal()
     voice_signal = QtCore.pyqtSignal()
+    shoot_signal = QtCore.pyqtSignal()
     weibo_crawl_signal = QtCore.pyqtSignal(str)
 
     def __init__(self, video, image_queue, update_queue, result_queue):
@@ -1001,6 +1026,11 @@ class MainTimerWidget(QtWidgets.QWidget):
             self.voice_signal.emit()
             VOICE_SIG = False
 
+        global SHOOT_SIG
+        if SHOOT_SIG:
+            self.shoot_signal.emit()
+            SHOOT_SIG = False
+
         global WEIBO_CRAWL_SIG
         if WEIBO_CRAWL_SIG:
             self.weibo_crawl_signal.emit(WEIBO_CRAWL_SIG)
@@ -1040,26 +1070,25 @@ class FaceRecognition(QtCore.QObject):
         self.result_queue = result_queue
         self.update_queue = update_queue
         self.update_queue_in = mp.Queue()
+        self.shoot_queue_in = mp.Queue()
         self.process = None
 
     def start_recognizing(self):
         self.process = mp.Process(target=gui_utils.recognize_face_process,
-                                  args=(self.image_queue, self.result_queue, self.update_queue, self.update_queue_in, self.db, self.user, self.passwd, self.tolerance))
+                                  args=(self.image_queue, self.result_queue, self.update_queue, self.update_queue_in, self.shoot_queue_in, self.db, self.user, self.passwd, self.tolerance))
         self.process.start()
 
     def stop_recognizing(self):
         if self.process is not None:
             self.process.terminate()
-        # while not self.result_queue.empty():
-        #     self.result_queue.get()
-        # while not self.update_queue.empty():
-        #     self.update_queue.get()
-        # while not self.update_queue_in.empty():
-        #     self.update_queue_in.get()
         self.update_queue_in.close()
+        self.shoot_queue_in.close()
 
     def update_slot(self):
         self.update_queue_in.put(0)
+
+    def shoot_slot(self):
+        self.shoot_queue_in.put(0)
 
 
 
@@ -1092,6 +1121,7 @@ class SocketServer(QtCore.QObject):
         global MSG_ACC
         global RECV_DATA
         global VOICE_SIG
+        global SHOOT_SIG
 
         if (event.timerId() != self.timer.timerId()):
             return
@@ -1115,6 +1145,10 @@ class SocketServer(QtCore.QObject):
                     if RECV_DATA == 'voice':
                         VOICE_SIG = True
                         # print('语音播放')
+                        return
+                    if RECV_DATA == 'shoot':
+                        SHOOT_SIG = True
+                        # print('拍照识别陌生人')
                         return
                     MSG_ACC = True
 
@@ -1162,12 +1196,27 @@ class AudioModule(QtCore.QObject):
             num_meets = len(meets)
             speech_content.append('这是您与他的第' + str(num_meets) + '次相遇')
             if num_meets > 1:
-                last_meet_time, last_meet_place = meets[-2]
+                last_meet_time, last_meet_place = meets[1]
                 speech_content.append('您上一次遇见他是在' + last_meet_time.strftime('%Y年%m月%d日%H时%M分') + ',于' + last_meet_place)
             # relations
+            cursor.execute('SELECT Meets.person_ID, COUNT(Meets.meet_ID) FROM Relations, Meets \
+                            WHERE Meets.person_ID=Relations.person1_ID AND Relations.person2_ID=%s \
+                            GROUP BY Meets.person_ID', (person_id,))
+            result_1 = cursor.fetchall()
+            cursor.execute('SELECT Meets.person_ID, COUNT(Meets.meet_ID) FROM Relations, Meets \
+                            WHERE Meets.person_ID=Relations.person2_ID AND Relations.person1_ID=%s \
+                            GROUP BY Meets.person_ID', (person_id,))
+            result_2 = cursor.fetchall()
+            result = list(result_1 + result_2)
+            result.sort(key=lambda x: -x[1])
+            person_id_list = [x[0] for x in result][:3]
+            format_strings = ','.join(['%s'] * len(person_id_list))
             cursor.execute('SELECT person1_ID, person2_ID, relation_type FROM Relations \
-                            WHERE person1_ID=%s OR person2_ID=%s', (person_id, person_id,))
-            relations = cursor.fetchall()[:3]
+                            WHERE person1_ID=%s OR person2_ID=%s' , (person_id, person_id,))
+            relations = cursor.fetchall()
+            relations = [r for r in relations if r[0] in person_id_list or r[1] in person_id_list]
+            if relations:
+                speech_content.append('他的关系网络按热度从高到低摘要如下')
             for relation in relations:
                 if relation[0] == person_id:
                     cursor.execute('SELECT name FROM Persons WHERE person_ID=%s', (relation[1],))
@@ -1185,14 +1234,9 @@ class AudioModule(QtCore.QObject):
                 speech_content.append('他感兴趣的有')
                 speech_content.extend(hot_words)
 
-
         # print(','.join(speech_content))
         speech_thread = threading.Thread(target=self.speech_robot.say, args=(','.join(speech_content),))
         speech_thread.start()
-
-    def hot_word_slot(self, hot_word):
-        if hot_word == '豆豆':
-            self.speech_robot.say('你好,我是豆豆')
 
 
 

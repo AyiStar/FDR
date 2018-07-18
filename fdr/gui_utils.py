@@ -29,15 +29,15 @@ def get_QImage(image):
 
 
 
-def recognize_face_process(q_image, q_result, q_change, q_change_in, db, user, passwd, tolerance, test=False):
+def recognize_face_process(q_image, q_result, q_change, q_change_in, q_shoot_in, db, user, passwd, tolerance):
     '''
         q_image: image IN
         q_result: result OUT
         q_change: change OUT
     '''
     MEET_INTERVAL = 30
-    CONFIRM_GRADE = 3
-    unknown_confirm = 0
+    # CONFIRM_GRADE = 3
+    # unknown_confirm = 0
     db_conn = MySQLdb.connect(db=db, user=user, passwd=passwd)
     db_conn.set_character_set('utf8')
     known_faces = face_utils.load_faces(db, user, passwd)
@@ -51,6 +51,11 @@ def recognize_face_process(q_image, q_result, q_change, q_change_in, db, user, p
         face_encodings = face_recognition.face_encodings(rgb_image, face_locations, num_jitters=1)
         face_matches = []
         need_update = False
+        need_record = False
+
+        if not q_shoot_in.empty():
+            q_shoot_in.get()
+            need_record = True
 
         for face_encoding, (top, right, bottom, left) in zip(face_encodings, face_locations):
             # See if the face is a match for the known face(s)
@@ -61,10 +66,10 @@ def recognize_face_process(q_image, q_result, q_change, q_change_in, db, user, p
 
         face_matches.sort(key=lambda x: x[5])
 
-        if [match for match in face_matches if len(match[0])==0]:
-            unknown_confirm += 1
-        else:
-            unknown_confirm = 0
+        # if [match for match in face_matches if len(match[0])==0]:
+        #     unknown_confirm += 1
+        # else:
+        #     unknown_confirm = 0
 
         for match in face_matches:
 
@@ -95,11 +100,14 @@ def recognize_face_process(q_image, q_result, q_change, q_change_in, db, user, p
 
             else: # Unknown
 
+                if not need_record:
+                    continue
+
                 cursor = db_conn.cursor()
 
-                if unknown_confirm < CONFIRM_GRADE:
-                    continue
-                unknown_confirm = 0
+                # if unknown_confirm < CONFIRM_GRADE:
+                #     continue
+                # unknown_confirm = 0
                 temp_result = face_recognition.face_encodings(image, known_face_locations=[(top, right, bottom, left)])
                 if len(temp_result) == 0:
                     continue
@@ -139,31 +147,11 @@ def recognize_face_process(q_image, q_result, q_change, q_change_in, db, user, p
                 pass
 
 
-        if test:
-            if len(face_matches) == 0:
-                print('No face')
-            else:
-                print('Detected face')
-
-                # for (top, right, bottom, left), match in zip(face_locations, face_matches):
-                #     # Draw a box around the face
-                #     cv2.rectangle(image, (left, top), (right, bottom), (0, 0, 255), 1)
-
-                #     # Draw a label with a name below the face
-                #     #cv2.rectangle(frame, (left, bottom - 35), (right, bottom), (0, 0, 255), cv2.FILLED)
-                #     font = cv2.FONT_HERSHEY_DUPLEX
-                #     cv2.putText(image, match[0]+':'+'%.2f'%(match[1]), (left, bottom), font, 1.0, (0, 0, 255), 1)
-
-                # if not os.path.exists('../tests/test_result/'):
-                #     os.mkdir('../tests/test_result/')
-                # cv2.imwrite('../tests/test_result/' + datetime.strftime(datetime.now(), '%Y-%m-%d-%H-%M-%S') + '.jpg', image)
-
-
 
 def weibo_crawl_process(db_login, uid, progress_queue=None):
 
     weibo_crawler = weibo_utils.WeiboCrawler(db_login)
-    weibo_data = weibo_crawler.get_weibos(uid, progress_queue=progress_queue)
+    weibo_data = weibo_crawler.get_weibos(uid, progress_queue=progress_queue, max_pages=30)
     progress_queue.put('正在写入数据库...')
     weibo_crawler.export_to_database(weibo_data)
     progress_queue.put('正在分析文本...')
@@ -187,7 +175,6 @@ def delete_person(db_login, person_id):
     cursor.execute('DELETE FROM WeiboAccounts WHERE person_ID=%s', (person_id,))
     cursor.execute('DELETE FROM Relations WHERE person1_ID=%s OR person2_ID=%s', (person_id, person_id))
 
-    # TODO delete weibos as well
     db_conn.commit()
     db_conn.close()
 
