@@ -780,10 +780,12 @@ class PersonCheckWidget(QtWidgets.QWidget):
             cursor.execute('SELECT relation_type, person1_ID FROM Relations WHERE person2_ID=%s', (person_id,))
             result_2 = cursor.fetchall()
             person_id_list = [r[1] for r in result_1 + result_2]
-            format_strings = ','.join(['%s'] * len(person_id_list))
-            cursor.execute('SELECT person1_ID, person2_ID, relation_type FROM Relations \
-                            WHERE person1_ID IN (%s) AND person2_ID IN (%s)' % (format_strings, format_strings), tuple(person_id_list*2))
-            result_3 = cursor.fetchall()
+            result_3 = []
+            if person_id_list:
+                format_strings = ','.join(['%s'] * len(person_id_list))
+                cursor.execute('SELECT person1_ID, person2_ID, relation_type FROM Relations \
+                                WHERE person1_ID IN (%s) AND person2_ID IN (%s)' % (format_strings, format_strings), tuple(person_id_list*2))
+                result_3 = cursor.fetchall()
 
             self.title_label = QtWidgets.QLabel('社交网络')
             self.title_label.setStyleSheet('QLabel {font: 30px}')

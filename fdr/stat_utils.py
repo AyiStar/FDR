@@ -123,13 +123,14 @@ class NetworkStat:
             edge_labels[(person1_id, person_id)] = relation_type
 
         person_id_list = [r[1] for r in result1 + result2]
-        format_strings = ','.join(['%s'] * len(person_id_list))
-        cursor.execute('SELECT person1_ID, person2_ID, relation_type FROM Relations \
-                        WHERE person1_ID IN (%s) AND person2_ID IN (%s)' % (format_strings, format_strings), tuple(person_id_list*2))
-        result3 = cursor.fetchall()
-        for person1_id, person2_id, relation_type in result3:
-            G.add_edge(person1_id, person2_id)
-            edge_labels[(person1_id, person2_id)] = relation_type
+        if person_id_list:
+            format_strings = ','.join(['%s'] * len(person_id_list))
+            cursor.execute('SELECT person1_ID, person2_ID, relation_type FROM Relations \
+                            WHERE person1_ID IN (%s) AND person2_ID IN (%s)' % (format_strings, format_strings), tuple(person_id_list*2))
+            result3 = cursor.fetchall()
+            for person1_id, person2_id, relation_type in result3:
+                G.add_edge(person1_id, person2_id)
+                edge_labels[(person1_id, person2_id)] = relation_type
 
         # pos = nx.spring_layout(G, k=0.15, iterations=20)
         pos = graphviz_layout(G)
